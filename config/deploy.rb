@@ -16,9 +16,15 @@ set :bundle_jobs, 4 # parallel bundler
 
 set :nvm_type, :user
 set :nvm_node, File.exist?('.nvmrc') && File.read('.nvmrc').strip || 'v14.16.0'
-set :npm_version, File.exist?('.npm-version') && File.read('.npm-version').strip || '7.11.1'
+set :npm_version, File.exist?('.npm-version') && File.read('.npm-version').strip || '7.20.6'
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('rake')
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('bundle')
+
+#set :yarn_target_path, -> { release_path.join('subdir') }  # default not set
+set :yarn_flags, '--production --pure-lockfile --no-emoji --no-progress' # default
+set :yarn_roles, :all                                      # default
+set :yarn_env_variables, {}                                # default
+
 # Default value for :format is :pretty
 # set :format, :pretty
 
@@ -72,7 +78,7 @@ before 'nvm:validate', 'deploy:nvm_check'
 ## Install defined version of npm if not selected
 before 'nvm:validate', 'deploy:npm_install_npm'
 ## Clear all npm packages
-before 'npm:install', 'deploy:clear_node_module'
+#before 'npm:install', 'deploy:clear_node_module'
 
 after 'deploy:publishing', 'deploy:restart'
 
