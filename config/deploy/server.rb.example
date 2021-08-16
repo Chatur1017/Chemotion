@@ -13,7 +13,6 @@ set :ssh_options, { forward_agent: true, auth_methods: %w(publickey) }
 # set :pty, false
 
 set :linked_files, fetch(:linked_files, []).push(
-  'config/datacollectors.yml',
   'config/database.yml'
 )
 
