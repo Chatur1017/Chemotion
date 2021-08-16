@@ -79,6 +79,7 @@ before 'nvm:validate', 'deploy:nvm_check'
 before 'nvm:validate', 'deploy:npm_install_npm'
 ## Clear all npm packages
 #before 'npm:install', 'deploy:clear_node_module'
+after 'deploy:updated', 'webpacker:precompile'
 
 after 'deploy:publishing', 'deploy:restart'
 

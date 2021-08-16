@@ -110,6 +110,7 @@ group :development do
   gem 'capistrano-rails'
   gem 'capistrano-rvm'
   gem 'capistrano-yarn'
+  gem 'capistrano-webpacker-precompile', require: false
 
   gem 'fast_stack'    # For Ruby MRI 2.0
   gem 'flamegraph'
