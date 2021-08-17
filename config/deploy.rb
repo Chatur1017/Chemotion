@@ -20,7 +20,7 @@ set :npm_version, File.exist?('.npm-version') && File.read('.npm-version').strip
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('rake')
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('bundle')
 
-set :yarn_target_path, -> { release_path.join('packs') }   # default not set
+set :yarn_target_path, -> { release_path.join('public/packs') }   # default not set
 set :yarn_flags, '--production --pure-lockfile --no-emoji --no-progress' # default
 set :yarn_roles, :all                                      # default
 set :yarn_env_variables, {}                                # default
@@ -53,7 +53,7 @@ set :linked_dirs, fetch(:linked_dirs, []).push(
   'node_modules',
   'log',
   'public/images', 'public/docx', 'public/simulations', 'public/zip',
-  'tmp/pids', 'tmp/cache', 'tmp/sockets', 'tmp/uploads',
+  'tmp/pids', 'tmp/cache', 'tmp/sockets', 'tmp/uploads', 'public/packs',
   'uploads'
 )
 
