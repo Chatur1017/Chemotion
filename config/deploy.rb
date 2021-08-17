@@ -20,7 +20,7 @@ set :npm_version, File.exist?('.npm-version') && File.read('.npm-version').strip
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('rake')
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('bundle')
 
-set :yarn_target_path, -> { release_path }   # default not set
+set :yarn_target_path, -> { release_path.join('packs') }   # default not set
 set :yarn_flags, '--production --pure-lockfile --no-emoji --no-progress' # default
 set :yarn_roles, :all                                      # default
 set :yarn_env_variables, {}                                # default
@@ -79,7 +79,7 @@ before 'nvm:validate', 'deploy:nvm_check'
 before 'nvm:validate', 'deploy:npm_install_npm'
 ## Clear all npm packages
 #before 'npm:install', 'deploy:clear_node_module'
-after 'deploy:updated', 'webpacker:precompile'
+#after 'deploy:updated', 'webpacker:precompile'
 
 after 'deploy:publishing', 'deploy:restart'
 
