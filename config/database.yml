@@ -23,7 +23,7 @@ test:
 production:
   adapter: postgresql
   encoding: unicode
-  database: chemotion_production
+  database: chemotion_eln_prod
   pool: 5
-  username: postgres
-  password:
+  username: chemotion_eln_prod
+  password: vG23C6GjUtA=
