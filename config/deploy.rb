@@ -20,7 +20,7 @@ set :npm_version, File.exist?('.npm-version') && File.read('.npm-version').strip
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('rake')
 set :nvm_map_bins, fetch(:nvm_map_bins, []).push('bundle')
 
-#set :yarn_target_path, -> { release_path.join('subdir') }  # default not set
+set :yarn_target_path, -> { release_path.join('client') }   # default not set
 set :yarn_flags, '--production --pure-lockfile --no-emoji --no-progress' # default
 set :yarn_roles, :all                                      # default
 set :yarn_env_variables, {}                                # default
