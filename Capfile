@@ -11,8 +11,8 @@ require 'capistrano/nvm' # Node version manager
 require 'capistrano/yarn'
 require 'capistrano/bundler'
 require 'capistrano/rails/migrations'
-#require 'capistrano/rails/assets'
-require "capistrano/webpacker/precompile"
+require 'capistrano/rails/assets'
+#require "capistrano/webpacker/precompile"
 #require 'capistrano/delayed_job'
 require 'whenever/capistrano'
 require 'slackistrano/capistrano'
