@@ -1,8 +1,14 @@
 module Reporter
   class Worker
+    DOCX_TYP = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    XLSX_TYP = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    CSV_TYP = 'text/csv'
+    HTML_TYP = 'text/html'
+
     def initialize(args)
       @report = args[:report]
       @author = User.find(@report.author_id)
+      @ext = args[:ext] || 'docx'
       @objs = extract(@report.objects)
       @file_name = @report.file_name
       @spl_settings = @report.sample_settings
@@ -12,33 +18,58 @@ module Reporter
       @img_format = @report.img_format
       @template_path = args[:template_path]
       @mol_serials = @report.mol_serials
+      @std_rxn = args[:std_rxn] || false
+      init_specific_variable
     end
 
     def process
       raw = Sablon.template(@template_path).render_to_string(substance)
-      create_docx(raw)
-      save_report
+      tmpfile = create_tmp(raw)
+      create_attachment(tmpfile) if tmpfile
     end
 
     private
 
-    def save_report
-      @report.update_attributes(file_path: fulll_file_name_ext, generated_at: Time.zone.now)
+    def init_specific_variable
+      @full_filename = "#{@file_name}.docx"
+      @typ = DOCX_TYP
+      @primary_store = Rails.configuration.storage.primary_store
     end
 
-    def create_docx(raw)
-      File.open(file_path.to_s, "wb+") do |f|
-        f.write(raw)
+    def create_tmp(raw)
+      tmp_file = Tempfile.new
+      tmp_file.write(raw)
+      tmp_file.close
+      tmp_file
+    end
+
+    def create_attachment(tmp)
+      ActiveRecord::Base.transaction do
+        att = @report.attachments.create!(
+          filename: @full_filename,
+          key: File.basename(tmp.path),
+          file_path: tmp.path,
+          created_by: @author.id,
+          created_for: @author.id,
+          content_type: @typ
+        )
+
+        TransferFileFromTmpJob.set(queue: "transfer_report_from_tmp_#{att.id}").perform_later([att.id]) unless att.nil?
+
+        @report.update_attributes(
+          generated_at: Time.zone.now
+        )
       end
-    end
 
-    def fulll_file_name_ext
-      @hash_name ||= Digest::SHA256.hexdigest(substance.to_s)
-      @fulll_file_name_ext ||= "#{@file_name}_#{@hash_name}.docx"
-    end
 
-    def file_path
-      @file_path ||= Rails.root.join("public", "docx", fulll_file_name_ext)
+      message = Message.create_msg_notification(
+        channel_subject: Channel::REPORT_GENERATOR_NOTIFICATION,
+        data_args: { report_name: @full_filename}, message_from: @author.id,
+        report_id: @report.id
+      )
+
+    ensure
+      tmp.unlink
     end
 
     def user_ids
@@ -47,8 +78,8 @@ module Reporter
 
     def extract(objects)
       objects.map do |tag|
-        obj = tag["type"].camelize.constantize.find(tag["id"])
-        obj_permission_hash = ElementReportPermissionProxy.new(@author, obj, user_ids).serialized
+        e = tag['type'].camelize.constantize.find(tag['id'])
+        ElementReportPermissionProxy.new(@author, e, user_ids).serialized
       end
     end
 
@@ -59,7 +90,8 @@ module Reporter
                       rxn_settings: @rxn_settings,
                       si_rxn_settings: @si_rxn_settings,
                       configs: @configs,
-                      img_format: @img_format
+                      img_format: @img_format,
+                      std_rxn: @std_rxn,
                     ).convert
     end
 

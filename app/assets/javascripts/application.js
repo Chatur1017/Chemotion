@@ -11,11 +11,7 @@
 // about supported directives.
 //
 //= require jquery
-//= require jquery.caret
 //= require jquery_ujs
 //= require autocomplete.min
-//= //require turbolinks
-//= require polyfill
-//= require components
 //= require bootstrap
 //= require pages

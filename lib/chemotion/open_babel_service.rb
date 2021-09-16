@@ -45,24 +45,32 @@ M  END
 
   end
 
-  def self.molecule_info_from_molfile molfile
-    version = molfile_version(molfile)
-    is_partial = molfile_has_R(molfile, version)
+  def self.molecule_info_from_molfile(molfile)
+    self.molecule_info_from_structure(molfile, 'mol')
+  end
 
-    molfile = molfile_skip_R(molfile, version) if is_partial
-
-    mf = mofile_clear_coord_bonds(molfile, version)
-    if mf
-      version += ' T9'
-    else
-      mf = molfile
+  def self.molecule_info_from_structure(structure, format = 'mol')
+    is_partial = false
+    mf = nil
+    if format == 'mol'
+      version = molfile_version(structure)
+      is_partial = molfile_has_R(structure, version)
+      molfile = structure
+      molfile = molfile_skip_R(structure, version) if is_partial
+      mf = mofile_clear_coord_bonds(molfile, version)
+      if mf
+        version += ' T9'
+      else
+        mf = molfile
+      end
     end
+    OpenBabel.obErrorLog.clear_log
 
     c = OpenBabel::OBConversion.new
-    c.set_in_format 'mol'
+    c.set_in_format format
 
     m = OpenBabel::OBMol.new
-    c.read_string m, mf
+    c.read_string m, mf || structure
 
     c.set_out_format 'smi'
     smiles = c.write_string(m, false).to_s.gsub(/\s.*/m, "").strip
@@ -76,6 +84,16 @@ M  END
     c.set_out_format 'inchikey'
     inchikey = c.write_string(m, false).to_s.gsub(/\n/, "").strip
 
+    unless format == 'mol'
+      c.set_out_format 'mol'
+      # opts = OpenBabel::OBConversion::GENOPTIONS
+      # c.add_option('gen2D', opts)
+      pop = OpenBabel::OBOp.find_type("gen2D")
+      pop.do(m) if %w(can smi).include?(format)
+      molfile = c.write_string(m, false).to_s
+      version = 'V2000'
+    end
+
     {
       charge: m.get_total_charge,
       mol_wt: m.get_mol_wt,
@@ -86,12 +104,18 @@ M  END
       inchikey: inchikey,
       inchi: inchi,
       formula: m.get_formula,
-      svg: svg_from_molfile(mf),
+      svg: svg_from_molfile(mf || molfile),
       cano_smiles: ca_smiles,
-      fp: fingerprint_from_molfile(mf),
+      fp: fingerprint_from_molfile(mf || molfile),
       molfile_version: version,
       is_partial: is_partial,
-      molfile: is_partial && molfile
+      # TODO we could return 'molfile' in any case
+      # molfile: (format != 'mol' && molfile) || (is_partial && molfile)
+      molfile: molfile,
+      ob_log: {
+        error: OpenBabel.obErrorLog.get_messages_of_level(0),
+        warning: OpenBabel.obErrorLog.get_messages_of_level(1)
+      }
     }
 
   end
@@ -117,8 +141,8 @@ M  END
     c.read_string m, cano_smiles
 
     c.set_out_format 'mol'
-    opts = OpenBabel::OBConversion::GENOPTIONS
-    c.add_option 'gen2D', opts
+    pop = OpenBabel::OBOp.find_type('gen2D')
+    pop.do(m)
     c.write_string(m, false).to_s
   end
 
@@ -186,6 +210,7 @@ M  END
     c.write_string(m, false)
   end
 
+  # clear type 9 bonds from molfile; return false if no type 9 bonds found
   def self.mofile_clear_coord_bonds(molfile, version = nil)
     case version || molfile_version(molfile)
     when 'V2000'
@@ -358,6 +383,18 @@ M  END
 
   private
 
+  def self.molfile_clear_hydrogens molfile, options={}
+    cc = OpenBabel::OBConversion.new
+    cc.set_in_format 'mol'
+    cc.set_out_format 'mol'
+    cc.set_options 'd u', OpenBabel::OBConversion::OUTOPTIONS
+    mm = OpenBabel::OBMol.new
+    cc.read_string mm, molfile
+    mm.delete_hydrogens
+    cc.write_string(mm, false)
+
+  end
+
   def self.svg_from_molfile molfile, options={}
     c = OpenBabel::OBConversion.new
     c.set_in_format 'mol'
@@ -451,7 +488,10 @@ M  END
     return sp.match(m)
   end
 
-  def self.get_cdxml_from_molfile(mol, shifter={}, output_path=nil)
+  def self.get_cdxml_from_molfile(molfile, shifter={}, output_path=nil)
+    # clear type 9 bonds for openbabel conv
+    mf = mofile_clear_coord_bonds(molfile)
+    mol = mf || molfile
     # `obabel -imol #{file_name} -ocdxml`
     input = Tempfile.new(["input", ".mol"]).path
     output = output_path || Tempfile.new(["output", ".mol"]).path
@@ -480,6 +520,23 @@ M  END
     rect = '<rect x="0" y="0" width="100" '
     rect += 'height="100" fill="white"/>'
     svg = smi_to_svg(smi)
+    svg.slice!(rect)
+    svg
+  end
+
+  def self.mdl_to_svg(mdl)
+    c = OpenBabel::OBConversion.new
+    m = OpenBabel::OBMol.new
+    c.set_in_and_out_formats('mdl', 'svg')
+    c.read_string(m, mdl)
+
+    c.write_string(m, true)
+  end
+
+  def self.mdl_to_trans_svg(mdl)
+    rect = '<rect x="0" y="0" width="100" '
+    rect += 'height="100" fill="white"/>'
+    svg = mdl_to_svg(mdl)
     svg.slice!(rect)
     svg
   end

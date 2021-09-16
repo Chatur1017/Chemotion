@@ -1,7 +1,38 @@
-class Molecule < ActiveRecord::Base
+# == Schema Information
+#
+# Table name: molecules
+#
+#  id                     :integer          not null, primary key
+#  inchikey               :string
+#  inchistring            :string
+#  density                :float            default(0.0)
+#  molecular_weight       :float
+#  molfile                :binary
+#  melting_point          :float
+#  boiling_point          :float
+#  sum_formular           :string
+#  names                  :string           default([]), is an Array
+#  iupac_name             :string
+#  molecule_svg_file      :string
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
+#  deleted_at             :datetime
+#  is_partial             :boolean          default(FALSE), not null
+#  exact_molecular_weight :float
+#  cano_smiles            :string
+#  cas                    :text
+#  molfile_version        :string(20)
+#
+# Indexes
+#
+#  index_molecules_on_deleted_at               (deleted_at)
+#  index_molecules_on_inchikey_and_is_partial  (inchikey,is_partial) UNIQUE
+#
+
+class Molecule < ApplicationRecord
   acts_as_paranoid
 
-  attr_accessor :pcid
+  attr_accessor :pcid, :ob_log
   include Collectable
   include Taggable
 
@@ -11,7 +42,7 @@ class Molecule < ActiveRecord::Base
   has_many :collections, through: :samples
   has_many :molecule_names
 
-  has_one :computed_prop
+  has_many :computed_props
 
   before_save :sanitize_molfile
   after_create :create_molecule_names
@@ -21,16 +52,19 @@ class Molecule < ActiveRecord::Base
 
   # scope for suggestions
   scope :by_iupac_name, -> (query) {
-    where('iupac_name ILIKE ?', "%#{query}%")
+    where('iupac_name ILIKE ?', "%#{sanitize_sql_like(query)}%")
   }
   scope :by_sum_formular, -> (query) {
-    where('sum_formular ILIKE ?', "%#{query}%")
+    where('sum_formular ILIKE ?', "%#{sanitize_sql_like(query)}%")
   }
   scope :by_inchistring, -> (query) {
-    where('inchistring ILIKE ?', "%#{query}%")
+    where('inchistring ILIKE ?', "%#{sanitize_sql_like(query)}%")
+  }
+  scope :by_inchikey, -> (query) {
+    where('inchikey ILIKE ?', "%#{sanitize_sql_like(query)}%")
   }
   scope :by_cano_smiles, -> (query) {
-    where('cano_smiles ILIKE ?', "%#{query}%")
+    where('cano_smiles ILIKE ?', "%#{sanitize_sql_like(query)}%")
   }
 
   scope :with_reactions, -> {
@@ -40,6 +74,10 @@ class Molecule < ActiveRecord::Base
   scope :with_wellplates, -> {
     joins(:samples).joins("inner join wells w on w.sample_id = samples.id" ).uniq
   }
+
+  def self.find_or_create_dummy
+    molecule = Molecule.find_or_create_by(inchikey: 'DUMMY')
+  end
 
   def self.find_or_create_by_molfile(molfile, **babel_info)
     unless babel_info && babel_info[:inchikey]
@@ -51,9 +89,10 @@ class Molecule < ActiveRecord::Base
     partial_molfile = babel_info[:molfile]
     molecule = Molecule.find_or_create_by(inchikey: inchikey, is_partial: is_partial) do |molecule|
       pubchem_info = Chemotion::PubchemService.molecule_info_from_inchikey(inchikey)
-      molecule.molfile = partial_molfile || molfile
+      molecule.molfile = is_partial && partial_molfile || molfile
       molecule.assign_molecule_data(babel_info, pubchem_info)
     end
+    molecule.ob_log = babel_info[:ob_log]
     molecule
   end
 
@@ -95,11 +134,32 @@ class Molecule < ActiveRecord::Base
     self.pcid = pubchem_info[:cid]
     self.check_sum_formular # correct exact and average MW for resins
 
-    self.attach_svg babel_info[:svg]
+    #self.attach_svg babel_info[:svg]
+    svg = Chemotion::OpenBabelService.svg_from_molfile(self.molfile)
+    self.attach_svg svg
 
     self.cano_smiles = babel_info[:cano_smiles]
     self.molfile_version = babel_info[:molfile_version]
     self.is_partial = babel_info[:is_partial]
+  end
+
+  def pubchem_lcss
+    return unless cid.present?
+    # if pubchem_lcss of taggable does not exist, try PubChem API and then update DB and return
+    mol_tag = self.tag
+    mol_tag_data = mol_tag.taggable_data || {}
+    if mol_tag_data['pubchem_lcss'] && mol_tag_data['pubchem_lcss'].length > 0
+      mol_tag_data['pubchem_lcss'];
+    else
+      mol_tag_data['pubchem_lcss'] = Chemotion::PubchemService.lcss_from_cid(cid)
+      # updated_at of element_tags(not molecule) is updated
+      mol_tag.update_attributes taggable_data: mol_tag_data
+      mol_tag_data['pubchem_lcss'];
+    end
+  end
+
+  def chem_repo
+    { id: self.tag&.taggable_data&.fetch('chemrepo_id', nil) }
   end
 
   def attach_svg svg_data
@@ -151,6 +211,8 @@ class Molecule < ActiveRecord::Base
   end
 
   def create_molecule_names
+    return if inchikey == 'DUMMY'
+
     if names.present?
       names.each do |nm|
         molecule_names.create(name: nm, description: 'iupac_name')

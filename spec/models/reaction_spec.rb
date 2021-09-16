@@ -1,5 +1,8 @@
+# frozen_string_literal: true
+
 require 'rails_helper'
 require Rails.root.join 'spec/concerns/taggable.rb'
+require Rails.root.join 'spec/concerns/reaction_rinchi.rb'
 
 RSpec.describe Reaction, type: :model do
   describe 'creation' do
@@ -33,13 +36,13 @@ RSpec.describe Reaction, type: :model do
     let(:s2) { create(:sample) }
     let(:s3) { create(:sample) }
     let(:s4) { create(:sample) }
-    let(:reaction) {
+    let(:reaction) do
       create(
         :reaction, starting_materials: [s1], solvents: [s2],
                    reactants: [s3], products: [s4],
                    collections: [collection]
       )
-    }
+    end
 
     before { reaction.destroy }
 
@@ -60,7 +63,7 @@ RSpec.describe Reaction, type: :model do
     end
 
     it 'only soft deletes reaction and associated samples' do
-      expect(reaction.deleted_at).to_not be_nil
+      expect(reaction.deleted_at).not_to be_nil
       expect(
         [
           reaction.reactions_starting_material_samples
@@ -71,5 +74,54 @@ RSpec.describe Reaction, type: :model do
         ].flatten
       ).to eq [s1.id, s2.id, s3.id, s4.id]
     end
+  end
+
+  describe 'include ReactionRinchi' do
+    it_behaves_like 'Esterification'
+    # it_behaves_like '1_reactant_-_no_structure'
+    it_behaves_like 'Inverted_stereochemistry'
+  end
+
+  describe 'create private note' do
+    let(:reaction) { create(:reaction) }
+    let(:note_1) do
+      create(:private_note, content: 'Note 1', noteable_id: reaction.id, noteable_type: 'Reaction')
+    end
+
+    before do
+      reaction.update(private_notes: [note_1])
+    end
+
+    it 'is possible to create a valid private note' do
+      expect(reaction.private_notes).not_to be_nil
+    end
+
+    context 'is content valid' do
+      let(:n) { reaction.private_notes[0] }
+      it 'is content valid' do
+        expect(n.content).to eq note_1.content
+      end
+    end
+  end
+  describe 'create private note' do
+    let(:reaction) { create(:reaction) }
+
+    let(:note_1) { create(:private_note, content: 'Note 1', noteable_id: reaction.id, noteable_type: 'Reaction') }
+
+    before do
+      reaction.update(private_notes: [note_1])
+    end
+
+    it 'is possible to create a valid private note' do
+      expect(reaction.private_notes).not_to be_nil
+    end
+
+    context 'is content valid' do
+      let(:n) { reaction.private_notes[0] }
+      it 'is content valid' do
+        expect(n.content).to eq note_1.content
+      end
+    end
+
   end
 end

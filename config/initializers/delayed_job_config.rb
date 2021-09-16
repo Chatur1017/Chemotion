@@ -9,7 +9,7 @@
 Delayed::Worker.logger = Logger.new(File.join(Rails.root, 'log', 'delayed_job.log'))
 
 begin
-  if ActiveRecord::Base.connection.table_exists?('delayed_jobs') && Delayed::Job.column_names.include?('cron')
+  if ActiveRecord::Base.connection.data_source_exists?('delayed_jobs') && Delayed::Job.column_names.include?('cron')
     Delayed::Job.where("handler like ?", "%CollectDataFrom%").destroy_all
     Delayed::Job.where("handler like ?", "%CollectFileFrom%").destroy_all
     if Rails.configuration.datacollectors && Rails.configuration.datacollectors.services
@@ -36,7 +36,22 @@ begin
       end
     end
     Delayed::Job.where("handler like ?", "%PubchemCidJob%").destroy_all
-    PubchemCidJob.set(cron: '15 1 * * 0').perform_later
+    cron_config = ENV['CRON_CONFIG_PC_CID'].presence
+    cron_config ||= "#{rand(0..59)} #{rand(0..23)} * * #{rand(6..7)}"
+    PubchemCidJob.set(cron: cron_config ).perform_later
+    Delayed::Job.where("handler like ?", "%PubchemLcssJob%").destroy_all
+    cron_config = ENV['CRON_CONFIG_PC_LCSS'].presence
+    cron_config ||= "#{rand(0..59)} #{rand(0..23)} * * #{rand(6..7)}"
+    PubchemLcssJob.set(cron: cron_config).perform_later
+    Delayed::Job.where("handler like ?", "%RefreshElementTagJob%").destroy_all
+    cron_config = ENV['CRON_CONFIG_ELEMENT_TAG'].presence
+    cron_config ||= "#{rand(0..59)} #{rand(20..23)} * * #{rand(6..7)}"
+    RefreshElementTagJob.set(cron: cron_config).perform_later
+    Delayed::Job.where("handler like ?", "%ChemrepoIdJob%").destroy_all
+    cron_config = ENV['CRON_CONFIG_CHEM_REPO_ID'].presence
+    cron_config ||= "#{rand(0..59)} #{rand(17..19)} * * #{rand(6..7)}"
+    ChemrepoIdJob.set(cron: cron_config ).perform_later
+
   end
 rescue PG::ConnectionBad => e
   puts e.message

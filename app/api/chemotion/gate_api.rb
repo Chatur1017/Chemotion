@@ -30,7 +30,7 @@ module Chemotion
         rescue JWT::VerificationError, JWT::DecodeError, JWT::ExpiredSignature => e
           error!("#{e}", 401)
         end
-        error!('host vs origin mismatch', 401) unless @auth_token[:origin] == request.headers['Origin']
+        error!('host vs origin mismatch', 401) unless request.headers['Origin'].start_with?(@auth_token[:origin])
         status 200
         { expire_at: Time.at(@auth_token[:exp]) }
       end
@@ -59,11 +59,11 @@ module Chemotion
             resp = connection.get { |req| req.url('/api/v1/public/ping') }
             unless resp.success?
               resp_body['error'] = resp.reason_phrase
-              error!(resp_body , resp.status)
+              error!(resp_body, resp.status)
             end
           rescue StandardError => e
             resp_body['error'] = e
-            error!(resp_body , 503)
+            error!(resp_body, 503)
           end
           unless (@collection = Collection.find_by(
             id: params[:id], user_id: current_user.id, is_shared: false
@@ -84,6 +84,7 @@ module Chemotion
           @url = @jwt.fqdn # fqdn should actually be eq to an orgin (proto/host/port)
           @req_headers = { 'Authorization' => "Bearer #{@jwt.token}", 'Origin' => request.headers['Referer'] }
           @queue = "gate_transfer_#{@collection.id}"
+          @move_queue = "move_to_collection_#{@collection.id}"
           # TODO: use persistent connection
           connection = Faraday.new(url: @url) do |f|
             f.use FaradayMiddleware::FollowRedirects
@@ -93,7 +94,7 @@ module Chemotion
           resp = connection.get { |req| req.url('/api/v1/gate/ping') }
           resp_body.merge!(JSON.parse(resp.body)) if resp.headers["content-type"] == "application/json"
 
-          error!(resp_body , resp.status) unless resp.success?
+          error!(resp_body, resp.status) unless resp.success?
           @resp_body = resp_body
         end
 
@@ -104,13 +105,14 @@ module Chemotion
 
           post do
             Delayed::Job.where(queue: @queue).destroy_all
+            Delayed::Job.where(queue: @move_queue).destroy_all
             GateTransferJob.set(queue: @queue)
                            .perform_later(@collection.id, @url, @req_headers)
-            status 204
+            status 202
           end
 
           delete do
-            Delayed::Job.where(queue: @queue).destroy_all && status(202)
+            Delayed::Job.where(queue: @queue).destroy_all && Delayed::Job.where(queue: @move_queue).destroy_all && status(202)
           end
         end
       end
@@ -155,8 +157,9 @@ module Chemotion
           imp.import
           primary_store = Rails.configuration.storage.primary_store
           new_attachments = []
-          imp.new_attachments.each_pair do |key, att|
+          imp.new_attachments&.each_pair do |key, att|
             next unless (tmp = params[key]&.fetch('tempfile', nil))
+
             att.file_path = tmp.path
             att.created_by = @user.id
             att.created_for = nil
@@ -199,7 +202,7 @@ module Chemotion
 
         after_validation do
           error!('Unauthorized', 401) unless (@collec = Collection.find_by(
-            user_id: current_user.id, is_locked: true, label: 'chemotion.net'
+            user_id: current_user.id, is_locked: true, label: 'chemotion-repository.net'
           ))
         end
 

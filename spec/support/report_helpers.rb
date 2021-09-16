@@ -1,10 +1,12 @@
+# frozen_string_literal: true
+
 module ReportHelpers
   def all_spl_settings
     {
       diagram: true,
       collection: true,
       analyses: true,
-      reaction_description: true,
+      reaction_description: true
     }
   end
 
@@ -17,14 +19,14 @@ module ReportHelpers
       tlc: true,
       observation: true,
       analysis: true,
-      literature: true,
+      literature: true
     }
   end
 
   def all_configs
     {
       page_break: true,
-      whole_diagram: true,
+      whole_diagram: true
     }
   end
 
@@ -34,9 +36,9 @@ module ReportHelpers
       CAS: true,
       Formula: true,
       Smiles: true,
-      InCHI: true,
-      :"Molecular Mass" => true,
-      :"Exact Mass" => true,
+      InChI: true,
+      "Molecular Mass": true,
+      "Exact Mass": true,
       EA: true
     }
   end

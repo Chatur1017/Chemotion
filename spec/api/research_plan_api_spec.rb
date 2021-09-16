@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require 'rails_helper'
 
 describe Chemotion::ResearchPlanAPI do
   context 'authorized user logged in' do
-    let(:user)  { create(:person) }
+    let(:user) { create(:person) }
 
     before do
       allow_any_instance_of(WardenAuthentication).to receive(:current_user).and_return(user)
@@ -10,7 +12,7 @@ describe Chemotion::ResearchPlanAPI do
 
     describe 'GET /api/v1/research_plans/:id' do
       context 'with appropriate permissions' do
-        let!(:c)      { create(:collection, user_id: user.id) }
+        let!(:c) { create(:collection, user_id: user.id) }
         let!(:research_plan) { create(:research_plan) }
 
         before do
@@ -23,7 +25,7 @@ describe Chemotion::ResearchPlanAPI do
           expect(response.status).to eq 200
         end
 
-        it 'returns serialized sample' do
+        it 'returns serialized research_plan' do
           expect(JSON.parse(response.body)['research_plan']['name']).to eq research_plan.name
         end
       end
@@ -31,9 +33,11 @@ describe Chemotion::ResearchPlanAPI do
 
     describe 'GET /api/v1/research_plans' do
       let!(:c) { create(:collection, label: 'C1', user: user, is_shared: false) }
-      let(:rp)  { create(:research_plan) }
+      let(:rp) { create(:research_plan) }
+      let!(:research_plan_metadata) { create(:research_plan_metadata) }
 
-      before do
+   before do
+        rp.research_plan_metadata = research_plan_metadata
         CollectionsResearchPlan.create!(research_plan: rp, collection: c)
       end
 
@@ -42,38 +46,43 @@ describe Chemotion::ResearchPlanAPI do
         first_rp = JSON.parse(response.body)['research_plans'].first
         expect(response.status).to eq 200
         expect(first_rp).to include(
-          "type" => 'research_plan',
-          "name" => rp.name,
-          "description" => rp.description,
-          "sdf_file" => 'sdf.test',
-          "svg_file" => 'svg.test',
+          'type' => 'research_plan',
+          'name' => rp.name
+        )
+        expect(first_rp['research_plan_metadata']).to include(
+            'id' => research_plan_metadata.id,
+            'doi' => research_plan_metadata.doi
         )
       end
     end
 
-    describe "POST /api/v1/research_plans" do
+    describe 'POST /api/v1/research_plans' do
       context 'with valid parameters' do
-        let(:params) {
+        let(:params) do
           {
             name: 'test',
-            description: { "ops" => [{ "insert" => "test description" }] },
-            sdf_file: 'test_inline_content',
-            svg_file: 'test_inline_svg_content'
+            container: {
+              attachments: [],
+              children: [],
+              is_new: true,
+              is_deleted: false,
+              name: 'new'
+            }
           }
-        }
+        end
 
-        before { post '/api/v1/research_plans', params }
+        before { post '/api/v1/research_plans', params: params,  as: :json}
 
-        it 'should be able to create a new research plan' do
+        it 'is able to create a new research plan' do
           rp = ResearchPlan.find_by(name: 'test')
-          expect(rp).to_not be_nil
-
+          expect(rp).not_to be_nil
+          params.delete(:container)
           params.each do |k, v|
             expect(rp.attributes.symbolize_keys[k]).to eq(v)
           end
         end
 
-        it 'should set the creator' do
+        it 'sets the creator' do
           rp = ResearchPlan.find_by(name: 'test')
           expect(rp.creator).to eq(user)
         end

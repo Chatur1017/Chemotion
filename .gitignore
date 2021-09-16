@@ -15,6 +15,8 @@
 !/log/.keep
 /tmp
 /tmp/*
+/tmp/novnc_devices/*
+!/tmp/novnc_devices/.keep
 
 .ruby-gemset
 .ruby-version
@@ -22,13 +24,24 @@
 
 .env
 
+/config/matrices.json
+/config/klasses.json
 /config/mailcollector.yml
 /config/datamailcollector.yml
 /config/datacollector.yml
 /config/datacollectors.yml
+/config/data_collector_keys/*
+/config/user_props.yml
+/config/profile_default.yml
+/config/compute_props.yml
+!/config/data_collector_keys/.keep
 
 /config/database.yml
 /config/storage.yml
+/config/spectra.yml
+/config/editors.yml
+/config/inference.yml
+
 /node_modules
 
 /public/images/molecules/*
@@ -55,17 +68,52 @@
 /public/images/research_plans/*
 !/public/images/research_plans/.keep
 
+/public/images/thumbnail/*
+!/public/images/thumbnail/.keep
+
 /public/images/*
 !/public/images/wild_card/
+!/public/images/ghs/
+
+/public/favicon.ico
+
+/public/ontologies/*
+!/public/ontologies/.keep
+!/public/ontologies/chmo.default.edited.json
+!/public/ontologies/chmo.default.json
+!/public/ontologies/chmo.default.profile.json
+!/public/ontologies/rxno.default.json
+!/public/ontologies/rxno.default.edited.json
 
 /uploads/*
 !/public/attachments/.keep
 
+/public/json/*
+!/public/json/schema.json
+
+/public/zip/*
+!/public/zip/.keep
+
+/public/udm/*
+!/public/udm/.keep
+
+!/public/apple-touch-icon.png
 
 /public/docx/*
 !/public/docx/.keep
 
+/public/xlsx/*
+!/public/xlsx/.keep
+
+/public/csv/*
+!/public/csv/.keep
+
+/public/html/*
+!/public/html/.keep
+
 /public/assets/*
+
+/public/cdjs/*
 
 /coverage/
 
@@ -83,6 +131,7 @@
 #config generated files
 aliasifyConfig.js
 /app/assets/javascripts/components/extra/*
+/app/packs/src/components/extra/*
 
 # Backups folder
 backup/deploy_backup
@@ -94,3 +143,21 @@ backup/weekly_backup
 # vim tags
 tags
 tags.temp
+.vscode/*
+
+spec/examples.txt
+
+# Ignore master key for decrypting credentials and more.
+/config/master.key
+
+# yarn / pack
+/public/packs
+/public/packs-test
+/yarn-error.log
+yarn-debug.log*
+
+#welcome message
+/public/welcome-message.md
+
+vendor/bundle/*
+.idea/*

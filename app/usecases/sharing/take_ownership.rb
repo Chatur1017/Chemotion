@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Usecases
   module Sharing
     class TakeOwnership
@@ -8,27 +10,61 @@ module Usecases
       def execute!
         if @params[:is_sync]
           new_owner_id = @params[:current_user_id]
-          sc = SyncCollectionsUser.find(@params[:id])
+          rsc = SyncCollectionsUser.find(@params[:id])
+          o_owner_id = rsc.shared_by_id
           # if user already owns the (unshared) collection, there is nothing to do here
-          return if (sc.shared_by_id == new_owner_id)
+          return if rsc.shared_by_id == new_owner_id
 
-          c = Collection.find(sc.collection_id)
-          previous_owner_id = sc.shared_by_id
-          root_label = "with %s" % User.find(previous_owner_id).name_abbreviation
-          root_collection_attributes = {
-            label: root_label,
-            user_id: previous_owner_id,
-            shared_by_id: new_owner_id,
-            is_locked: true,
-            is_shared: true
-          }
+          cols = Collection.where([' id = ? or ancestry = ?  or ancestry like ? or ancestry like ? or ancestry like ? ',
+                                   rsc.collection_id, rsc.collection_id.to_s, '%/' + rsc.collection_id.to_s, rsc.collection_id.to_s + '/%',
+                                   '%/' + rsc.collection_id.to_s + '/%'])
 
-          ActiveRecord::Base.transaction do
-            c.update(user_id: new_owner_id, ancestry: nil)
-            rc = Collection.find_or_create_by(root_collection_attributes)
-            sc.update(user_id: previous_owner_id , shared_by_id: new_owner_id,fake_ancestry: rc.id.to_s)
+          cols.each do |c|
+            previous_owner_id = rsc.shared_by_id
+            root_label = format('with %s', User.find(previous_owner_id).name_abbreviation)
+            root_collection_attributes = {
+              label: root_label,
+              user_id: previous_owner_id,
+              shared_by_id: new_owner_id,
+              is_locked: true,
+              is_shared: true
+            }
+
+            sc = SyncCollectionsUser.find_by(collection_id: c.id, user_id: @params[:current_user_id])
+            sc_all = SyncCollectionsUser.where(collection_id: c.id, shared_by_id: c.user_id)
+            ActiveRecord::Base.transaction do
+              if c.id == rsc.collection_id
+                c.update(user_id: new_owner_id, ancestry: nil)
+              else
+                c.update(user_id: new_owner_id)
+              end
+              rc = Collection.find_or_create_by(root_collection_attributes)
+              sc&.update(user_id: previous_owner_id, shared_by_id: new_owner_id, fake_ancestry: rc.id.to_s)
+
+              sc_all.each do |sc|
+                next if sc.user_id == @params[:current_user_id]
+
+                ancestry_label = format('with %s', User.find(sc.user_id).name_abbreviation)
+                root_collection_attrs = {
+                  label: ancestry_label,
+                  user_id: sc.user_id,
+                  shared_by_id: new_owner_id,
+                  is_locked: true,
+                  is_shared: true
+                }
+                rca = Collection.find_or_create_by(root_collection_attrs)
+                sc.update(shared_by_id: new_owner_id, fake_ancestry: rca.id.to_s)
+              end
+            end
           end
 
+          user = User.find_by(id: new_owner_id)
+          col = Collection.find_by(id: rsc.collection_id)
+          message = Message.create_msg_notification(
+            channel_subject: Channel::COLLECTION_TAKE_OWNERSHIP,
+            data_args: { new_owner: user.name, collection_name: col.label },
+            message_from: new_owner_id, message_to: [o_owner_id]
+          )
         else
           c = Collection.find(@params[:id])
           # if user already owns the (unshared) collection, there is nothing to do here
@@ -49,7 +85,7 @@ module Usecases
           ActiveRecord::Base.transaction do
             c.update(is_shared: false, parent: nil, shared_by_id: nil)
 
-          # delete all associations of former_owner to elements included in c
+            # delete all associations of former_owner to elements included in c
             CollectionsSample.where('sample_id IN (?) AND collection_id IN (?)', sample_ids, owner_sample_collections.pluck(:id)).delete_all
             CollectionsReaction.where('reaction_id IN (?) AND collection_id IN (?)', reaction_ids, owner_reaction_collections.pluck(:id)).delete_all
             CollectionsWellplate.where('wellplate_id IN (?) AND collection_id IN (?)', wellplate_ids, owner_wellplate_collections.pluck(:id)).delete_all

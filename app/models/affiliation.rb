@@ -1,6 +1,25 @@
 # frozen_string_literal: true
 
-class Affiliation < ActiveRecord::Base
+# == Schema Information
+#
+# Table name: affiliations
+#
+#  id           :integer          not null, primary key
+#  company      :string
+#  country      :string
+#  organization :string
+#  department   :string
+#  group        :string
+#  created_at   :datetime
+#  updated_at   :datetime
+#  from         :date
+#  to           :date
+#  domain       :string
+#  cat          :string
+#
+
+
+class Affiliation < ApplicationRecord
   attr_accessor :from_month, :to_month
   validates :organization, presence: true
   before_save :from_to

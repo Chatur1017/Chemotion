@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'rails_helper'
 
 describe Chemotion::PermissionAPI do
@@ -23,9 +25,9 @@ describe Chemotion::PermissionAPI do
       let(:w2) { create(:wellplate, collections: [c1]) }
       let(:sc1) { create(:screen, collections: [c1]) }
 
-      let!(:params) {
+      let!(:params) do
         {
-          currentCollection: { id: c1.id }, 
+          currentCollection: { id: c1.id },
           elements_filter: {
             sample: {
               all: true,
@@ -49,11 +51,13 @@ describe Chemotion::PermissionAPI do
             }
           }
         }
-      }
-
+      end
 
       it 'responds with true if sharing allowed' do
-        post '/api/v1/permissions/status', params.to_json, 'CONTENT_TYPE' => 'application/json'
+        post '/api/v1/permissions/status',
+          params: params.to_json,
+          headers: { 'CONTENT_TYPE' => 'application/json' }
+
         expect(JSON.parse(response.body)['sharing_allowed']).to eq true
       end
     end

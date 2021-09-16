@@ -4,12 +4,14 @@ module Chemotion
     helpers ContainerHelpers
     helpers ParamsHelpers
     helpers CollectionHelpers
+    helpers ProfileHelpers
 
     resource :screens do
       desc "Return serialized screens"
       params do
         optional :collection_id, type: Integer, desc: "Collection id"
         optional :sync_collection_id, type: Integer, desc: "SyncCollectionsUser id"
+        optional :filter_created_at, type: Boolean, desc: 'filter by created at or updated at'
         optional :from_date, type: Integer, desc: 'created_date from in ms'
         optional :to_date, type: Integer, desc: 'created_date to in ms'
       end
@@ -33,13 +35,19 @@ module Chemotion
           end
         else
           # All collection of current_user
-          Screen.joins(:collections).where('collections.user_id = ?', current_user.id).uniq
+          Screen.joins(:collections).where('collections.user_id = ?', current_user.id).distinct
         end.includes(collections: :sync_collections_users).order("created_at DESC")
 
         from = params[:from_date]
         to = params[:to_date]
-        scope = scope.created_time_from(Time.at(from)) if from
-        scope = scope.created_time_to(Time.at(to) + 1.day) if to
+        by_created_at = params[:filter_created_at] || false
+
+        scope = scope.created_time_from(Time.at(from)) if from && by_created_at
+        scope = scope.created_time_to(Time.at(to) + 1.day) if to && by_created_at
+        scope = scope.updated_time_from(Time.at(from)) if from && !by_created_at
+        scope = scope.updated_time_to(Time.at(to) + 1.day) if to && !by_created_at
+
+        reset_pagination_page(scope)
 
         paginate(scope).map{|s| ElementListPermissionProxy.new(current_user, s, user_ids).serialized}
       end
@@ -70,6 +78,7 @@ module Chemotion
         optional :description, type: Hash
         requires :wellplate_ids, type: Array
         requires :container, type: Hash
+        optional :segments, type: Array, desc: 'Segments'
       end
       route_param :id do
         before do
@@ -77,14 +86,19 @@ module Chemotion
         end
 
         put do
-          update_datamodel(params[:container]);
-          params.delete(:container);
+          update_datamodel(params[:container])
+          params.delete(:container)
 
-          attributes = declared(params.except(:wellplate_ids), include_missing: false)
+          attributes = declared(params.except(:wellplate_ids, :segments), include_missing: false)
 
           screen = Screen.find(params[:id])
           screen.update(attributes)
+          screen.save_segments(segments: params[:segments], current_user_id: current_user.id)
           old_wellplate_ids = screen.wellplates.pluck(:id)
+
+          #save to profile
+          kinds = screen.container&.analyses&.pluck("extended_metadata->'kind'")
+          recent_ols_term_update('chmo', kinds) if kinds&.length&.positive?
 
           params[:wellplate_ids].each do |id|
             ScreensWellplate.find_or_create_by(wellplate_id: id, screen_id: params[:id])
@@ -108,6 +122,7 @@ module Chemotion
         optional :collection_id, type: Integer
         requires :wellplate_ids, type: Array
         requires :container, type: Hash
+        optional :segments, type: Array, desc: 'Segments'
       end
       post do
         attributes = {
@@ -123,6 +138,11 @@ module Chemotion
 
         screen.container = update_datamodel(params[:container])
         screen.save!
+        screen.save_segments(segments: params[:segments], current_user_id: current_user.id)
+
+        #save to profile
+        kinds = screen.container&.analyses&.pluck("extended_metadata->'kind'")
+        recent_ols_term_update('chmo', kinds) if kinds&.length&.positive?
 
         collection = Collection.find(params[:collection_id])
         CollectionsScreen.create(screen: screen, collection: collection)
@@ -133,26 +153,6 @@ module Chemotion
         end
         screen
       end
-
-      namespace :ui_state do
-        desc "Delete screens by UI state"
-        params do
-          requires :ui_state, type: Hash, desc: "Selected screens from the UI" do
-            use :ui_state_params
-          end
-        end
-
-        before do
-          cid = fetch_collection_id_w_current_user(params[:ui_state][:collection_id], params[:ui_state][:is_sync_to_me])
-          @screens = Screen.by_collection_id(cid).by_ui_state(params[:ui_state]).for_user(current_user.id)
-          error!('401 Unauthorized', 401) unless ElementsPolicy.new(current_user, @screens).destroy?
-        end
-
-        delete do
-          @screens.presence&.destroy_all || { ui_state: [] }
-        end
-      end
-
     end
   end
 end

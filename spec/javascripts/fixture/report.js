@@ -10,6 +10,7 @@ const rxnSettings = [
   { checked: true, text: 'material' },
   { checked: true, text: 'description' },
   { checked: true, text: 'purification' },
+  { checked: true, text: 'dangerous products' },
   { checked: true, text: 'tlc' },
   { checked: true, text: 'observation' },
   { checked: true, text: 'analysis' },
@@ -21,7 +22,7 @@ const siRxnSettings = [
   { checked: true, text: 'CAS' },
   { checked: true, text: 'Formula' },
   { checked: true, text: 'Smiles' },
-  { checked: true, text: 'InCHI' },
+  { checked: true, text: 'InChI' },
   { checked: true, text: 'Molecular Mass' },
   { checked: true, text: 'Exact Mass' },
   { checked: true, text: 'EA' },
@@ -51,10 +52,12 @@ const originalState = {
   fileDescription: '',
   activeKey: 0,
   processings: [],
-  template: 'supporting_information',
   selMolSerials: [],
   attThumbNails: [],
   prdAtts: [],
+  previewObjs: [],
+  template: {},
+  templateOpts: [],
 };
 
 export { originalState, splSettings, rxnSettings, configs };

@@ -148,3 +148,16 @@
   display: block;
   width: 256px;
 }
+
+.one-line {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.display-inline {
+  display: inline;
+}
+
+.no-padding {
+  padding: 0;
+}

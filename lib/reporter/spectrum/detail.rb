@@ -31,7 +31,7 @@ module Reporter
         font_size = 14
         mol_serial_delta(@prd, font_size) +
           space_delta +
-          iupac_name_delta(@prd, font_size)
+          showed_name_delta(@prd, font_size)
       end
 
       # - - - - - - - - - -
@@ -70,15 +70,23 @@ module Reporter
            'insert' => kind }]
       end
 
+      def img_ext?(file_ext)
+        img_exts = %w[png jpeg]
+        img_exts.include?(file_ext)
+      end
+
       def image(target)
-        begin
-          img = scale_img(target)
-          Sablon::Image::Definition.new(
-            target.filename, img.to_blob, img.columns, img.rows
-          )
-        rescue
-          nil
-        end
+        file_ext = MimeMagic.by_path(target.filename)&.subtype
+        return nil unless img_ext?(file_ext)
+        img = scale_img(target)
+        fname = "#{target.identifier}.#{file_ext}"
+        sab_img_def = Sablon::Image::Definition.new(
+          fname, img.to_blob, img.columns, img.rows
+        )
+        img.destroy!
+        sab_img_def
+      rescue
+        nil
       end
 
       def scale_img(target)
@@ -91,9 +99,9 @@ module Reporter
         [{ 'insert' => ' ' }]
       end
 
-      def iupac_name_delta(prd, font_size = 12)
+      def showed_name_delta(prd, font_size = 12)
         [{ 'attributes' => { 'font-size' => font_size },
-           'insert' => prd['iupac_name'] }]
+           'insert' => prd.showedName }]
       end
 
       def mol_serial(mol_id)

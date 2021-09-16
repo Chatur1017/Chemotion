@@ -1,3 +1,6 @@
+# frozen_string_literal: true
+
+# A class as a file data collector
 class DatacollectorFile < DatacollectorObject
   def collect_from(device)
     if @sftp
@@ -17,11 +20,12 @@ class DatacollectorFile < DatacollectorObject
     a = Attachment.new(
       filename: @name,
       file_data: IO.binread(@path),
+      content_type: MimeMagic.by_path(@name)&.type,
       created_by: device.id,
       created_for: recipient.id
     )
     a.save!
-    return a
+    a
   end
 
   def attach_remote(device)
@@ -31,6 +35,7 @@ class DatacollectorFile < DatacollectorObject
       a = Attachment.new(
         filename: @name,
         file_data: IO.binread(tmpfile.path),
+        content_type: MimeMagic.by_path(@name)&.type,
         created_by: device.id,
         created_for: recipient.id
       )
@@ -39,14 +44,21 @@ class DatacollectorFile < DatacollectorObject
       tmpfile.unlink
     end
     a.save!
-    return a
+    a
   end
 
-  def add_attach_to_container(device, attach)
+  def add_attach_to_container(device, attach, _ = false)
     helper = CollectorHelper.new(device, recipient)
     dataset = helper.prepare_dataset(Time.now.strftime('%Y-%m-%d'))
-    attach.update!(container_id: dataset.id)
-    primary_store = Rails.configuration.storage.primary_store
-    attach.update!(storage: primary_store)
+    attach.update!(attachable: dataset)
+    attach.update!(storage: Rails.configuration.storage.primary_store)
+
+    # add notifications
+    queue = "inbox_#{device.id}_#{recipient.id}"
+    MessageIncomingDataJob.set(queue: queue, wait: 3.minutes).perform_later(
+      helper.sender_container.name, helper.sender.id, recipient.id
+    ) unless Delayed::Job.find_by(queue: queue)
+
+    attach
   end
 end

@@ -1,13 +1,21 @@
 class PagesController < ApplicationController
-  skip_before_action :authenticate_user!, only: [:home]
+  skip_before_action :authenticate_user!, only: [
+    :home, :about, :chemscanner, :chemspectra, :chemspectra_editor
+  ]
   before_action :fetch_affiliations, only: [:affiliations, :update_affiliations]
   before_action :build_affiliation, only: [:affiliations, :update_affiliations]
 
   def home; end
 
+  def about; end
+
   def docx; end
 
-  def welcome; end
+  def welcome; 
+    flash.clear  
+  end
+
+  def editor; end
 
   def update_user
     @user = current_user
@@ -40,21 +48,8 @@ class PagesController < ApplicationController
     end
   end
 
-  def groups
-    @groups = (
-      current_user.groups + current_user.administrated_accounts
-                                        .where(type: 'Group')
-    ).uniq.map do |g|
-      GroupSerializer.new(g).serializable_hash.deep_stringify_keys
-    end
-    @new_group = Group.new
-    @users = Person.all.map do |u|
-      UserSimpleSerializer.new(u).serializable_hash.deep_stringify_keys
-    end
-  end
-
   def affiliations
-
+    #flash.discard    
   end
 
   def create_affiliation
@@ -126,6 +121,6 @@ class PagesController < ApplicationController
   end
 
   def profile_params
-    params.require(:profile).permit(:show_external_name)
+    params.require(:profile).permit(:show_external_name, :curation)
   end
 end

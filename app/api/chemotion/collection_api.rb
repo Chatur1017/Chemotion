@@ -43,25 +43,74 @@ module Chemotion
           .locked.unshared.roots.order('label ASC')
       end
 
+      get_child = Proc.new do |children, collects|
+        children.each do |obj|
+          child = collects.select { |dt| dt['ancestry'] == obj['ancestry_root']}
+          get_child.call(child, collects) if child.count>0
+          obj[:children] = child
+        end
+      end
+
+      build_tree = Proc.new do |collects, delete_empty_root|
+        col_tree = []
+        collects.collect{ |obj| col_tree.push(obj) if obj['ancestry'].nil? }
+        get_child.call(col_tree,collects)
+        col_tree.select! { |col| col[:children].count > 0 } if delete_empty_root
+        Entities::CollectionRootEntity.represent(col_tree, serializable: true)
+      end
+
       desc "Return all unlocked unshared serialized collection roots of current user"
       get :roots do
-        current_user.collections.ordered.includes(:shared_users)
-          .unlocked.unshared.roots
+        collects = Collection.where(user_id: current_user.id).unlocked.unshared.order('id')
+        .select(
+          <<~SQL
+            id, label, ancestry, is_synchronized, permission_level, position, collection_shared_names(user_id, id) as shared_names,
+            reaction_detail_level, sample_detail_level, screen_detail_level, wellplate_detail_level, element_detail_level, is_locked,is_shared,
+            case when (ancestry is null) then cast(id as text) else concat(ancestry, chr(47), id) end as ancestry_root
+          SQL
+        )
+        .as_json
+        build_tree.call(collects,false)
       end
 
       desc "Return all shared serialized collections"
       get :shared_roots do
-        Collection.shared(current_user.id).roots
+        collects = Collection.shared(current_user.id).order("id")
+        .select(
+          <<~SQL
+            id, user_id, label,ancestry, permission_level, user_as_json(collections.user_id) as shared_to,
+            is_shared, is_locked, is_synchronized, false as is_remoted,
+            reaction_detail_level, sample_detail_level, screen_detail_level, wellplate_detail_level, element_detail_level,
+            case when (ancestry is null) then cast(id as text) else concat(ancestry, chr(47), id) end as ancestry_root
+          SQL
+        )
+        .as_json
+        build_tree.call(collects,true)
       end
 
       desc "Return all remote serialized collections"
-      get :remote_roots, each_serializer: CollectionRemoteSerializer do
-        current_user.all_collections.remote(current_user.id).roots
+      get :remote_roots do
+        collects = Collection.remote(current_user.id).where([" user_id in (select user_ids(?))",current_user.id]).order("id")
+        .select(
+          <<~SQL
+            id, user_id, label, ancestry, permission_level, user_as_json(collections.shared_by_id) as shared_by,
+            case when (ancestry is null) then cast(id as text) else concat(ancestry, chr(47), id) end as ancestry_root,
+            reaction_detail_level, sample_detail_level, screen_detail_level, wellplate_detail_level, is_locked, is_shared,
+            shared_user_as_json(collections.user_id, #{current_user.id}) as shared_to,position
+          SQL
+        )
+        .as_json
+        build_tree.call(collects,true)
       end
 
       desc "Bulk update and/or create new collections"
       patch '/' do
         Collection.bulk_update(current_user.id, params[:collections].as_json(except: :descendant_ids), params[:deleted_ids])
+      end
+
+      desc "reject a shared collections"
+      patch '/reject_shared' do
+        Collection.reject_shared(current_user.id, params[:id])
       end
 
       namespace :shared do
@@ -75,6 +124,7 @@ module Chemotion
             requires :wellplate_detail_level, type: Integer
             requires :screen_detail_level, type: Integer
             optional :research_plan_detail_level, type: Integer
+            optional :element_detail_level, type: Integer
           end
         end
 
@@ -125,7 +175,10 @@ module Chemotion
           wellplates = Wellplate.by_collection_id(@cid).by_ui_state(params[:elements_filter][:wellplate]).for_user_n_groups(user_ids)
           screens = Screen.by_collection_id(@cid).by_ui_state(params[:elements_filter][:screen]).for_user_n_groups(user_ids)
           research_plans = ResearchPlan.by_collection_id(@cid).by_ui_state(params[:elements_filter][:research_plan]).for_user_n_groups(user_ids)
-
+          elements = {}
+          ElementKlass.find_each { |klass|
+            elements[klass.name] = Element.by_collection_id(@cid).by_ui_state(params[:elements_filter][klass.name]).for_user_n_groups(user_ids)
+          }
           top_secret_sample = samples.pluck(:is_top_secret).any?
           top_secret_reaction = reactions.flat_map(&:samples).map(&:is_top_secret).any?
           top_secret_wellplate = wellplates.flat_map(&:samples).map(&:is_top_secret).any?
@@ -138,16 +191,22 @@ module Chemotion
           share_wellplates = ElementsPolicy.new(current_user, wellplates).share?
           share_screens = ElementsPolicy.new(current_user, screens).share?
           share_research_plans = ElementsPolicy.new(current_user, research_plans).share?
+          share_elements = !(elements&.length > 0)
+          elements.each do |k, v|
+            share_elements = ElementsPolicy.new(current_user, v).share?
+            break unless share_elements
+          end
 
           sharing_allowed = share_samples && share_reactions &&
-            share_wellplates && share_screens && share_research_plans
-
+            share_wellplates && share_screens && share_research_plans && share_elements
           error!('401 Unauthorized', 401) if (!sharing_allowed || is_top_secret)
+
           @sample_ids = samples.pluck(:id)
           @reaction_ids = reactions.pluck(:id)
           @wellplate_ids = wellplates.pluck(:id)
           @screen_ids = screens.pluck(:id)
           @research_plan_ids = research_plans.pluck(:id)
+          @element_ids = elements&.transform_values { |v| v && v.pluck(:id) }
         end
 
         post do
@@ -167,130 +226,228 @@ module Chemotion
             wellplate_ids: @wellplate_ids,
             screen_ids: @screen_ids,
             research_plan_ids: @research_plan_ids,
+            element_ids: @element_ids,
             collection_attributes: params[:collection_attributes].merge(shared_by_id: current_user.id)
           ).execute!
+          Message.create_msg_notification(
+            channel_subject: Channel::SHARED_COLLECTION_WITH_ME,
+            message_from: current_user.id, message_to: uids,
+            data_args: { 'shared_by': current_user.name }, level: 'info'
+          )
         end
       end
 
       namespace :elements do
-        desc 'Update the collection of a set of elements by UI state'
+        desc 'Move elements by UI state to another collection'
         params do
-          requires :ui_state, type: Hash, desc: 'Selected elements from the UI'
+          requires :ui_state, type: Hash, desc: "Selected elements from the UI" do
+            use :main_ui_state_params
+          end
           optional :collection_id, type: Integer, desc: 'Destination collect id'
           optional :newCollection, type: String, desc: 'Label for a new collion'
+          optional :is_sync_to_me, type: Boolean, desc: 'Destination collection is_sync_to_me'
         end
 
         put do
-          collection_id = fetch_collection_id_for_assign(params)
-          collection = Collection.find_by(id: collection_id)
-          # can only move to collection  owned or shared by current_user
-          if !collection || params[:is_sync_to_me] || collection.is_shared
-            error!('401 Unauthorized collection', 401)
+          to_collection_id = fetch_collection_id_for_assign(params, 4)
+          error!('401 Unauthorized assignment to collection', 401) unless to_collection_id
+
+          from_collection = fetch_source_collection_for_removal
+          error!('401 Unauthorized removal from collection', 401) unless from_collection
+          if (from_collection.label == 'All' && from_collection.is_locked)
+            error!('401 Cannot remove elements from  \'All\' root collection', 401)
           end
-          ui_state = params[:ui_state]
-          current_collection_id = ui_state[:currentCollection].id
-          # cannot moved from 'All' collection
-          if Collection.get_all_collection_for_user(current_user)
-                       .id == current_collection_id
-            error!('401 Cannot move element out of root collection', 401)
+          API::ELEMENTS.each do |element|
+            ui_state = params[:ui_state][element]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
+            collections_element_klass = ('collections_' + element).classify.constantize
+            element_klass = element.classify.constantize
+            ids = element_klass.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            collections_element_klass.move_to_collection(ids, from_collection.id, to_collection_id)
           end
-          [
-            [Sample, :sample, CollectionsSample],
-            [Reaction, :reaction, CollectionsReaction],
-            [Wellplate, :wellplate, CollectionsWellplate],
-            [Screen, :screen, CollectionsScreen],
-            [ResearchPlan, :research_plan, CollectionsResearchPlan]
-          ].each do |e|
-            ids = e[0].for_user(current_user.id).for_ui_state_with_collection(
-              ui_state[e[1]], e[2], current_collection_id
-            ).compact
-            e[2].move_to_collection(ids, current_collection_id, collection_id)
+
+          klasses = ElementKlass.find_each do |klass|
+            ui_state = params[:ui_state][klass.name]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
+
+            ids = Element.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            CollectionsElement.move_to_collection(ids, from_collection.id, to_collection_id, klass.name)
           end
+
           status 204
         end
 
         desc 'Assign a collection to a set of elements by UI state'
         params do
-          requires :ui_state, type: Hash, desc: 'Selected elements from the UI'
+          requires :ui_state, type: Hash, desc: 'Selected elements from the UI' do
+            use :main_ui_state_params
+          end
           optional :collection_id, type: Integer, desc: 'Destination collection id'
           optional :newCollection, type: String, desc: 'Label for a new collection'
           optional :is_sync_to_me, type: Boolean, desc: 'Destination collection is_sync_to_me'
         end
 
         post do
-          collection_id = fetch_collection_id_for_assign(params)
-          error!('401 Unauthorized collection', 401) unless collection_id
-          ui_state = params[:ui_state]
-          current_collection_id = ui_state[:currentCollection].id
-          [
-            [Sample, :sample, CollectionsSample],
-            [Reaction, :reaction, CollectionsReaction],
-            [Wellplate, :wellplate, CollectionsWellplate],
-            [Screen, :screen, CollectionsScreen],
-            [ResearchPlan, :research_plan, CollectionsResearchPlan]
-          ].each do |e|
-            ids = e[0].for_user(current_user.id).for_ui_state_with_collection(
-              ui_state[e[1]], e[2], current_collection_id
-            )
-            e[2].create_in_collection(ids, collection_id)
+          from_collection = fetch_source_collection_for_assign
+          error!('401 Unauthorized import from current collection', 401) unless from_collection
+          to_collection_id = fetch_collection_id_for_assign(params, 4)
+
+          error!('401 Unauthorized assignment to collection', 401) unless to_collection_id
+
+          API::ELEMENTS.each do |element|
+            ui_state = params[:ui_state][element]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
+
+            collections_element_klass = ('collections_' + element).classify.constantize
+            element_klass = element.classify.constantize
+            ids = element_klass.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            collections_element_klass.create_in_collection(ids, to_collection_id)
           end
+
+          klasses = ElementKlass.find_each do |klass|
+            ui_state = params[:ui_state][klass.name]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
+            ids = Element.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            CollectionsElement.create_in_collection(ids, to_collection_id, klass.name)
+          end
+
           status 204
         end
 
-        desc "Remove from a collection a set of elements by UI state"
+        desc "Remove from current collection a set of elements by UI state"
         params do
-          requires :ui_state, type: Hash, desc: "Selected elements from the UI"
+          requires :ui_state, type: Hash, desc: "Selected elements from the UI" do
+            use :main_ui_state_params
+          end
         end
+
         delete do
-          ui_state = params[:ui_state]
-          current_collection_id = ui_state[:currentCollection].id
+          # ui_state = params[:ui_state]
+          from_collection = fetch_source_collection_for_removal
+          error!('401 Unauthorized removal from collection', 401) unless from_collection
+          if (from_collection.label == 'All' && from_collection.is_locked)
+            error!('401 Cannot remove elements from  \'All\' root collection', 401)
+          end
 
-          # Remove Sample
-          sample_ids = Sample.for_ui_state_with_collection(
-            ui_state[:sample],
-            CollectionsSample,
-            current_collection_id
-          )
-          CollectionsSample.remove_in_collection(sample_ids, current_collection_id)
+          API::ELEMENTS.each do |element|
+            ui_state = params[:ui_state][element]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            ui_state[:collection_ids] = from_collection.id
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
+            collections_element_klass = ('collections_' + element).classify.constantize
+            element_klass = element.classify.constantize
+            ids = element_klass.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            collections_element_klass.remove_in_collection(ids, from_collection.id)
+          end
 
-          # Remove Reaction
-          reaction_ids = Reaction.for_ui_state_with_collection(
-            ui_state[:reaction],
-            CollectionsReaction,
-            current_collection_id
-          )
-          CollectionsReaction.remove_in_collection(reaction_ids, current_collection_id)
 
-          # Remove Wellplate
-          wellplate_ids = Wellplate.for_ui_state_with_collection(
-            ui_state[:wellplate],
-            CollectionsWellplate,
-            current_collection_id
-          )
-          CollectionsWellplate.remove_in_collection(wellplate_ids, current_collection_id)
+          klasses = ElementKlass.find_each do |klass|
+            ui_state = params[:ui_state][klass.name]
+            next unless ui_state
+            ui_state[:checkedAll] = ui_state[:checkedAll] || ui_state[:all]
+            ui_state[:checkedIds] = ui_state[:checkedIds].presence || ui_state[:included_ids]
+            ui_state[:uncheckedIds] = ui_state[:uncheckedIds].presence || ui_state[:excluded_ids]
+            ui_state[:collection_ids] = from_collection.id
+            next unless ui_state[:checkedAll] || ui_state[:checkedIds].present?
 
-          # Remove Screen
-          screen_ids = Screen.for_ui_state_with_collection(
-            ui_state[:screen],
-            CollectionsScreen,
-            current_collection_id
-          )
-          CollectionsScreen.remove_in_collection(screen_ids, current_collection_id)
+            ids = Element.by_collection_id(from_collection.id).by_ui_state(ui_state).pluck(:id)
+            CollectionsElement.remove_in_collection(ids, from_collection.id)
+          end
+
           status 204
         end
-
       end
 
       namespace :unshared do
-
         desc "Create an unshared collection"
         params do
           requires :label, type: String, desc: "Collection label"
         end
+
         post do
           Collection.create(user_id: current_user.id, label: params[:label])
         end
+      end
 
+      namespace :exports do
+        desc "Create export job"
+        params do
+          requires :collections, type: Array[Integer]
+          requires :format, type: Symbol, values: [:json, :zip, :udm]
+          requires :nested, type: Boolean
+        end
+
+        post do
+          collection_ids = params[:collections].uniq
+          nested = params[:nested] == true
+
+          if collection_ids.empty?
+            # no collection was given, export all collections for this user
+            collection_ids = Collection.belongs_to_or_shared_by(current_user.id, current_user.group_ids).pluck(:id)
+          else
+            # check if the user is allowed to export these collections
+            collection_ids.each do |collection_id|
+              collection = Collection.belongs_to_or_shared_by(current_user.id, current_user.group_ids).find_by(id: collection_id)
+              unless collection
+                # case when collection purpose is to build the collection tree (empty and locked)
+                next if Collection.find_by(id: collection_id, is_locked: true, is_shared: true)
+              end
+              error!('401 Unauthorized', 401) unless collection
+            end
+          end
+
+          ExportCollectionsJob.perform_later(collection_ids, params[:format].to_s, nested, current_user.id)
+          status 204
+        end
+      end
+
+      namespace :imports do
+        desc "Create import job"
+        params do
+          requires :file, type: File
+        end
+        post do
+          file = params[:file]
+          if tempfile = file[:tempfile]
+            att = Attachment.new(
+              bucket: file[:container_id],
+              filename: file[:filename],
+              key: File.basename(file[:tempfile].path),
+              file_path: file[:tempfile],
+              created_by: current_user.id,
+              created_for: current_user.id,
+              content_type: file[:type]
+            )
+            begin
+              att.save!
+            ensure
+              tempfile.close
+              tempfile.unlink
+            end
+            # run the asyncronous import job and return its id to the client
+            ImportCollectionsJob.perform_later(att, current_user.id)
+            status 204
+          end
+        end
       end
 
     end

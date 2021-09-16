@@ -1,6 +1,33 @@
 # frozen_string_literal: true
 
-class Fingerprint < ActiveRecord::Base
+# == Schema Information
+#
+# Table name: fingerprints
+#
+#  id           :integer          not null, primary key
+#  fp0          :bit(64)
+#  fp1          :bit(64)
+#  fp2          :bit(64)
+#  fp3          :bit(64)
+#  fp4          :bit(64)
+#  fp5          :bit(64)
+#  fp6          :bit(64)
+#  fp7          :bit(64)
+#  fp8          :bit(64)
+#  fp9          :bit(64)
+#  fp10         :bit(64)
+#  fp11         :bit(64)
+#  fp12         :bit(64)
+#  fp13         :bit(64)
+#  fp14         :bit(64)
+#  fp15         :bit(64)
+#  num_set_bits :integer
+#  created_at   :datetime         not null
+#  updated_at   :datetime         not null
+#  deleted_at   :time
+#
+
+class Fingerprint < ApplicationRecord
   # acts_as_paranoid
   include Collectable
 
@@ -23,7 +50,6 @@ class Fingerprint < ActiveRecord::Base
   #                  ],
   #                  message: 'existed fingerprint'
   #                 }
-
 
   validates :num_set_bits,
             presence: true,
@@ -97,6 +123,8 @@ class Fingerprint < ActiveRecord::Base
     end
 
     def find_or_create_by_molfile(molfile)
+      return unless molfile.present?
+
       molfile = standardized_molfile(molfile)
       fp_vector = Chemotion::OpenBabelService.bin_fingerprint_from_molfile(molfile)
 
@@ -115,18 +143,19 @@ class Fingerprint < ActiveRecord::Base
     def standardized_molfile(molfile)
       return molfile unless molfile.include? 'R#'
 
-      molfile.gsub!(/(> <PolymersList>[\W\w.\n]+[\d]+)/m, '')
+      mf = molfile.gsub(/(> <PolymersList>[\W\w.\n]+[\d]+)/m, '')
 
-      if molfile.include? ' R# '
-        lines = molfile.split "\n"
+      if mf.include? ' R# '
+        lines = mf.split "\n"
         lines[4..-1].each do |line|
           break if line =~ /(M.+END+)/
+
           line.gsub!(' R# ', ' R1  ')
         end
-        molfile = lines.join "\n"
+        mf = lines.join "\n"
       end
 
-      molfile
+      mf
     end
 
     def generate_sample_fingerprint
@@ -141,6 +170,7 @@ class Fingerprint < ActiveRecord::Base
   # Self-generate num_set_bits if zero?
   def check_num_set_bits
     return unless num_set_bits.zero?
+
     self.num_set_bits = vector_bin.reduce(0) { |sum, v| sum + v.count('1') }
   end
 

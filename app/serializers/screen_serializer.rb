@@ -2,15 +2,19 @@ class ScreenSerializer < ActiveModel::Serializer
   attributes *DetailLevels::Screen.new.base_attributes
 
   has_many :wellplates
-  has_one :container
+  has_one :container, serializer: ContainerSerializer
   has_one :tag
+  has_many :segments
 
   def code_log
     CodeLogSerializer.new(object.code_log).serializable_hash
   end
-  
+
   def created_at
     object.created_at.strftime("%d.%m.%Y, %H:%M")
+  end
+  def updated_at
+    object.updated_at.strftime("%d.%m.%Y, %H:%M")
   end
 
   def type

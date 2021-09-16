@@ -17,6 +17,11 @@ module SampleLevelReportSerializable
     def get_svg_path
       object.get_svg_path
     end
+
+    def literatures
+      Literature.by_element_attributes_and_cat(id, 'Sample', 'detail')
+                .add_user_info
+    end
   end
 
   class_methods do
@@ -28,7 +33,7 @@ module SampleLevelReportSerializable
       restricted_attributes.each do |attr|
         define_method(attr) do
           case attr
-          when :analyses, :residues, :elemental_compositions, :reactions
+          when :analyses, :residues, :elemental_compositions, :reactions, :solvent
             []
           when :_contains_residues
             false

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class DatacollectorFolder < DatacollectorObject
   attr_accessor :files
 
@@ -59,7 +61,7 @@ class DatacollectorFolder < DatacollectorObject
     a.save!
     helper = CollectorHelper.new(device, recipient)
     dataset = helper.prepare_new_dataset(@name)
-    a.update!(container_id: dataset.id)
+    a.update!(attachable: dataset)
     primary_store = Rails.configuration.storage.primary_store
     a.update!(storage: primary_store)
   end

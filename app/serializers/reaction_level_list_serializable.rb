@@ -2,7 +2,12 @@ module ReactionLevelListSerializable
   extend ActiveSupport::Concern
 
   included do
-    [:starting_materials, :reactants, :solvents, :products, :literatures].each do |attr|
+    [
+      :starting_materials,
+      :reactants,
+      :solvents,
+      :products, # :literatures
+    ].each do |attr|
       define_method(attr) do
         []
       end
@@ -13,7 +18,12 @@ module ReactionLevelListSerializable
     def list_restricted_methods
       DetailLevels::Reaction.new.list_removed_attributes.each do |attr|
         define_method(attr) do
-          nil
+          case attr
+          when :purification_solvents
+            []
+          else
+            nil
+          end
         end
       end
     end

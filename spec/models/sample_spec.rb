@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'rails_helper'
 require Rails.root.join 'spec/concerns/taggable.rb'
 
@@ -28,7 +30,7 @@ RSpec.describe Sample, type: :model do
     it 'has a CodeLog' do
       expect(sample.code_log.value).to match(/\d{40}/)
       expect(sample.code_log.id).to match(
-      /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+        /^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
       )
     end
   end
@@ -42,7 +44,7 @@ RSpec.describe Sample, type: :model do
     let(:collection) { create(:collection) }
 
     before do
-      #CollectionsSample.create!(sample: sample, collection: collection)
+      # CollectionsSample.create!(sample: sample, collection: collection)
       ReactionsStartingMaterialSample.create!(sample: sample, reaction: reaction_1)
       ReactionsReactantSample.create!(sample: sample, reaction: reaction_1)
       ReactionsProductSample.create!(sample: sample, reaction: reaction_2)
@@ -50,18 +52,18 @@ RSpec.describe Sample, type: :model do
       wellplate.reload
     end
 
-    #todo check that the associations are not destroyed
+    # TODO: check that the associations are not destroyed
     it 'does not destroy associations for reaction' do
       expect(collection.collections_samples).to eq []
       expect(sample.reactions_starting_material_samples).to eq []
-      #expect(reaction_1.reactions_starting_material_samples).to eq sample.reactions_starting_material_samples
-      #expect(reaction_1.reactions_reactant_samples).to eq sample
-      #expect(reaction_2.reactions_product_samples).to eq sample
-      #expect(wellplate.wells).to eq []
+      # expect(reaction_1.reactions_starting_material_samples).to eq sample.reactions_starting_material_samples
+      # expect(reaction_1.reactions_reactant_samples).to eq sample
+      # expect(reaction_2.reactions_product_samples).to eq sample
+      # expect(wellplate.wells).to eq []
     end
 
     it 'only soft deletes sample' do
-      expect(Sample.with_deleted).to eq [sample]
+      expect(described_class.with_deleted).to eq [sample]
     end
 
     it 'also destroys corresponding CodeLog' do
@@ -76,14 +78,14 @@ RSpec.describe Sample, type: :model do
     let(:s2) { create(:sample) }
     let(:s3) { create(:sample) }
 
-    let(:ui_state) {
+    let(:ui_state) do
       {
         all: true,
         included_ids: [],
         excluded_ids: [],
         collection_id: c1.id
       }
-    }
+    end
 
     before do
       CollectionsSample.create!(collection: c1, sample: s1)
@@ -92,106 +94,94 @@ RSpec.describe Sample, type: :model do
     end
 
     it 'returns samples according to ui_state' do
-      expect(Sample.for_ui_state(ui_state)).to match_array([s1, s2])
+      expect(described_class.for_ui_state(ui_state)).to match_array([s1, s2])
     end
   end
 
-
-
   context 'updating molfile' do
-
-
-    let(:molfile) {
-      <<-MOLFILE
-H2O Water 7732185
-##CCCBDB 8251509:58
-Geometry Optimized at HF/STO-3G
-  3  2  0  0  0  0  0  0  0  0    V2000
-    0.0000    0.0000    0.1271 O  0000000000000000000
-    0.0000    0.7580   -0.5085 H  0000000000000000000
-    0.0000   -0.7580   -0.5085 H  0000000000000000000
-  1  2  1  0     0  0
-  1  3  1  0     0  0
-M  END
-MOLFILE
-    }
+    let(:molfile) do
+      <<~MOLFILE
+        H2O Water 7732185
+        ##CCCBDB 8251509:58
+        Geometry Optimized at HF/STO-3G
+          3  2  0  0  0  0  0  0  0  0    V2000
+            0.0000    0.0000    0.1271 O  0000000000000000000
+            0.0000    0.7580   -0.5085 H  0000000000000000000
+            0.0000   -0.7580   -0.5085 H  0000000000000000000
+          1  2  1  0     0  0
+          1  3  1  0     0  0
+        M  END
+      MOLFILE
+    end
     let(:sample) { build(:sample, molfile: molfile) }
-    let(:mol_attributes){
+    let(:mol_attributes) do
       {
-        "boiling_point" => nil,
-              "density" => 0.0,
-             "inchikey" => "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
-        "inchistring" => "InChI=1S/H2O/h1H2",
-          "iupac_name" => "oxidane",
-       "melting_point" => nil,
-   "molecular_weight" => 18.01528,
-  #  "molecule_svg_file" => "XLYOFNOQVPJJNP-UHFFFAOYSA-N.svg", #todo
-            "molfile" => molfile.rstrip,
-              "names" => ["water", "oxidane"],
-       "sum_formular" => "H2O"
-     }
-    }
-
-    before do
-      sample.collections << FactoryGirl.build(:collection)
-      sample.creator = FactoryGirl.build(:person)
+        'boiling_point' => nil,
+        'density' => 0.0,
+        'inchikey' => 'XLYOFNOQVPJJNP-UHFFFAOYSA-N',
+        'inchistring' => 'InChI=1S/H2O/h1H2',
+        'iupac_name' => 'oxidane',
+        'melting_point' => nil,
+        'molecular_weight' => 18.01528,
+        #  "molecule_svg_file" => "XLYOFNOQVPJJNP-UHFFFAOYSA-N.svg", #todo
+        'molfile' => molfile.rstrip,
+        'names' => %w[water oxidane],
+        'sum_formular' => 'H2O'
+      }
     end
 
-    it 'should create a molecule' do
+    before do
+      sample.collections << FactoryBot.build(:collection)
+      sample.creator = FactoryBot.build(:person)
+    end
+
+    it 'creates a molecule' do
       sample.save!
       molecule = sample.molecule
       expect(molecule).to be_present
     end
 
-    it 'should retrieve molecule information' do
+    it 'retrieves molecule information' do
       sample.save!
       molecule = sample.molecule
       mol_attributes.each do |k, v|
         expect(molecule.attributes[k]).to eq(v)
       end
-
-
     end
 
-    ##Fixme : now file are anonymised
-    #it 'should create the molecule svg file' do
+    # #Fixme : now file are anonymised
+    # it 'should create the molecule svg file' do
     #  expect(File).to receive(:new).with('public/images/molecules/XLYOFNOQVPJJNP-UHFFFAOYSA-N.svg','w+').and_call_original
     #  sample.save
-    #end
-
+    # end
   end
 
   context 'count samples created by user' do
-    let(:user) { create(:person)}
+    let(:user) { create(:person) }
 
     before do
-      3.times do
-        create(:sample, creator: user)
-      end
+      create_list(:sample, 3, creator: user)
     end
 
-    it 'should associate the samples with its creator' do
-      expect(Sample.last.creator).to eq(user)
+    it 'associates the samples with its creator' do
+      expect(described_class.last.creator).to eq(user)
       expect(user.samples_created.count).to eq(3)
     end
 
-    it 'should count samples created by user' do
+    it 'counts samples created by user' do
       user.reload
       expect(user.counters['samples'].to_i).to eq(3)
     end
   end
 
-
   context 'count subsamples created per sample' do
-    let(:sample) { create(:sample)}
+    let(:sample) { create(:sample) }
 
     before do
-      3.times do
-        create(:sample, parent: sample)
-      end
+      create_list(:sample, 3, parent: sample)
     end
 
-    it 'should associate the subsamples with its parent' do
+    it 'associates the subsamples with its parent' do
       expect(sample.children.count).to eq(3)
     end
   end
@@ -209,9 +199,9 @@ MOLFILE
       end
 
       it 'returns correct values' do
-        expect(sample.amount_g.round(3)).to be(0.044)
-        expect(sample.amount_ml.round(3)).to be(1.991)
-        expect(sample.amount_mmol.round(3)).to be(2.449)
+        expect(sample.amount_g.round(3)).to eq(0.044)
+        expect(sample.amount_ml.round(3)).to eq(1.991)
+        expect(sample.amount_mmol.round(3)).to eq(2.449)
       end
     end
 
@@ -225,9 +215,9 @@ MOLFILE
       end
 
       it 'returns correct values' do
-        expect(sample.amount_g.round(3)).to be(0.0)
-        expect(sample.amount_ml.round(3)).to be(2.231)
-        expect(sample.amount_mmol.round(3)).to be(0.0)
+        expect(sample.amount_g.round(3)).to eq(0.0)
+        expect(sample.amount_ml.round(3)).to eq(2.231)
+        expect(sample.amount_mmol.round(3)).to eq(0.0)
       end
     end
 
@@ -241,9 +231,31 @@ MOLFILE
       end
 
       it 'returns correct values' do
-        expect(sample.amount_g.round(3)).to be(0.021)
-        expect(sample.amount_ml.round(3)).to be(0.0)
-        expect(sample.amount_mmol.round(3)).to be(1.19)
+        expect(sample.amount_g.round(3)).to eq(0.021)
+        expect(sample.amount_ml.round(3)).to eq(0.0)
+        expect(sample.amount_mmol.round(3)).to eq(1.19)
+      end
+    end
+  end
+
+  describe 'create private note' do
+    let(:reaction) { create(:reaction) }
+    let(:note_1) do
+      create(:private_note, content: 'Note 1', noteable_id: reaction.id, noteable_type: 'Reaction')
+    end
+
+    before do
+      reaction.update(private_notes: [note_1])
+    end
+
+    it 'is possible to create a valid private note' do
+      expect(reaction.private_notes).not_to be_nil
+    end
+
+    context 'is content valid' do
+      let(:n) { reaction.private_notes[0] }
+      it 'is content valid' do
+        expect(n.content).to eq note_1.content
       end
     end
   end

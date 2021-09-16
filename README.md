@@ -28,16 +28,21 @@ Copyright (C) 2015-current  Nicole Jung (nicole.jung(at)kit.edu) of the Karlsruh
 
 
 
-## Install
+## Installation
 
 see [INSTALL.md][INSTALL]
 
+## User Documentation
+
+see online [docs](https://www.chemotion.net/chemotionsaurus/docs/eln/about)
 
 ## Code Status
 
-[![Build Status](https://travis-ci.org/ComPlat/chemotion_ELN.svg?branch=master)](https://travis-ci.org/ComPlat/chemotion_ELN)
+[![JavaScript Unit Tests](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testjs.yml/badge.svg?branch=development-5)](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testjs.yml/badge.svg?branch=development-5)
+[![Ruby Unit Tests](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testrb.yml/badge.svg?branch=development-5)](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testrb.yml/badge.svg?branch=development-5)
+[![Acceptance Tests](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testacceptance.yml/badge.svg?branch=development-5)](https://github.com/ComPlat/chemotion_ELN/actions/workflows/testacceptance.yml/badge.svg?branch=development-5)
 
-[![Coverage Status](https://coveralls.io/repos/github/ComPlat/chemotion_ELN/badge.svg)](https://coveralls.io/github/ComPlat/chemotion_ELN)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1054134.svg)](https://doi.org/10.5281/zenodo.1054134)
 
 
 

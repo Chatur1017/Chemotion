@@ -4,6 +4,8 @@ module Chemotion
     helpers ContainerHelpers
     helpers ParamsHelpers
     helpers CollectionHelpers
+    helpers SampleHelpers
+    helpers ProfileHelpers
 
     resource :wellplates do
       namespace :bulk do
@@ -24,23 +26,6 @@ module Chemotion
       end
 
       namespace :ui_state do
-        desc "Delete wellplates by UI state"
-        params do
-          requires :ui_state, type: Hash, desc: "Selected wellplates from the UI" do
-            use :ui_state_params
-          end
-        end
-
-        before do
-          cid = fetch_collection_id_w_current_user(params[:ui_state][:collection_id], params[:ui_state][:is_sync_to_me])
-          @wellplates = Wellplate.by_collection_id(cid).by_ui_state(params[:ui_state]).for_user(current_user.id)
-          error!('401 Unauthorized', 401) unless ElementsPolicy.new(current_user, @wellplates).destroy?
-        end
-
-        delete do
-          @wellplates.presence&.destroy_all || { ui_state: [] }
-        end
-
         desc "Get Wellplates by UI state"
         params do
           requires :ui_state, type: Hash, desc: "Selected wellplates from the UI" do
@@ -62,6 +47,7 @@ module Chemotion
       params do
         optional :collection_id, type: Integer, desc: "Collection id"
         optional :sync_collection_id, type: Integer, desc: "SyncCollectionsUser id"
+        optional :filter_created_at, type: Boolean, desc: 'filter by created at or updated at'
         optional :from_date, type: Integer, desc: 'created_date from in ms'
         optional :to_date, type: Integer, desc: 'created_date to in ms'
       end
@@ -85,13 +71,19 @@ module Chemotion
           end
         else
           # All collection of current_user
-          Wellplate.joins(:collections).where('collections.user_id = ?', current_user.id).uniq
+          Wellplate.joins(:collections).where('collections.user_id = ?', current_user.id).distinct
         end.includes(collections: :sync_collections_users).order("created_at DESC")
 
         from = params[:from_date]
         to = params[:to_date]
-        scope = scope.created_time_from(Time.at(from)) if from
-        scope = scope.created_time_to(Time.at(to) + 1.day) if to
+        by_created_at = params[:filter_created_at] || false
+
+        scope = scope.created_time_from(Time.at(from)) if from && by_created_at
+        scope = scope.created_time_to(Time.at(to) + 1.day) if to && by_created_at
+        scope = scope.updated_time_from(Time.at(from)) if from && !by_created_at
+        scope = scope.updated_time_to(Time.at(to) + 1.day) if to && !by_created_at
+
+        reset_pagination_page(scope)
 
         paginate(scope).map{|s| ElementListPermissionProxy.new(current_user, s, user_ids).serialized}
       end
@@ -133,6 +125,7 @@ module Chemotion
         optional :description, type: Hash
         optional :wells, type: Array
         requires :container, type: Hash
+        optional :segments, type: Array, desc: 'Segments'
       end
       route_param :id do
         before do
@@ -143,8 +136,13 @@ module Chemotion
           update_datamodel(params[:container]);
           params.delete(:container);
 
-          wellplate = Usecases::Wellplates::Update.new(declared(params, include_missing: false)).execute!
-          {wellplate: ElementPermissionProxy.new(current_user, wellplate, user_ids).serialized}
+          wellplate = Usecases::Wellplates::Update.new(declared(params, include_missing: false), current_user.id).execute!
+
+          #save to profile
+          kinds = wellplate.container&.analyses&.pluck("extended_metadata->'kind'")
+          recent_ols_term_update('chmo', kinds) if kinds&.length&.positive?
+
+        { wellplate: ElementPermissionProxy.new(current_user, wellplate, user_ids).serialized }
         end
       end
 
@@ -156,6 +154,7 @@ module Chemotion
         optional :wells, type: Array
         optional :collection_id, type: Integer
         requires :container, type: Hash
+        optional :segments, type: Array, desc: 'Segments'
       end
       post do
 
@@ -167,8 +166,27 @@ module Chemotion
 
         wellplate.save!
 
-        current_user.increment_counter 'wellplates'
+        #save to profile
+        kinds = wellplate.container&.analyses&.pluck("extended_metadata->'kind'")
+        recent_ols_term_update('chmo', kinds) if kinds&.length&.positive?
+
+          current_user.increment_counter 'wellplates'
         {wellplate: ElementPermissionProxy.new(current_user, wellplate, user_ids).serialized}
+      end
+
+      namespace :subwellplates do
+        desc "Split Wellplates into Subwellplates"
+        params do
+          requires :ui_state, type: Hash, desc: "Selected wellplates from the UI"
+        end
+        post do
+          ui_state = params[:ui_state]
+          col_id = ui_state[:currentCollectionId]
+          wellplate_ids = Wellplate.for_user(current_user.id).for_ui_state_with_collection(ui_state[:wellplate], CollectionsWellplate, col_id)
+          Wellplate.where(id: wellplate_ids).each do |wellplate|
+            subwellplate = wellplate.create_subwellplate current_user, col_id, true
+          end
+        end
       end
     end
   end

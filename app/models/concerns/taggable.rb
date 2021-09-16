@@ -21,6 +21,8 @@ module Taggable
     return if tag.destroyed?
     data = tag.taggable_data || {}
     data['reaction_id'] = args[:reaction_tag] if args[:reaction_tag]
+    data['wellplate_id'] = args[:wellplate_tag] if args[:wellplate_tag]
+    data['element'] = args[:element_tag] if args[:element_tag]
     data['pubchem_cid'] = pubchem_tag if args[:pubchem_tag]
     data['analyses'] = analyses_tag if args[:analyses_tag]
     data['collection_labels'] = collection_tag if args[:collection_tag]
@@ -29,7 +31,7 @@ module Taggable
 
   def update_tag!(**args)
     update_tag(**args)
-    tag.save!
+    tag.save! unless tag.destroyed?
   end
 
   def remove_blank_value(hash)
@@ -56,16 +58,26 @@ module Taggable
   def collection_tag
     klass = "collections_#{self.class.name.underscore.pluralize}"
     return unless respond_to?(klass)
-    send(klass).map { |cc|
+    cols = []
+    send(klass).each do |cc|
       next unless c = cc.collection
-      next if c.label == 'All' # TODO
-      cid = collection_id(c)
-      {
+      next if c.label == 'All' && c.is_locked
+      cols.push({
         name: c.label, is_shared: c.is_shared, user_id: c.user_id,
-        id: cid, shared_by_id: c.shared_by_id,
-        is_synchronized: c.is_synchronized
-      }
-    }
+        id: c.id, shared_by_id: c.shared_by_id,
+        is_synchronized: false
+      })
+      if c.is_synchronized
+        c.sync_collections_users&.each do |syn|
+          cols.push({
+            name: c.label, is_shared: c.is_shared, user_id: syn.user_id,
+            id: syn.id, shared_by_id: syn.shared_by_id,
+            is_synchronized: c.is_synchronized
+          })
+        end
+      end
+    end
+    cols
   end
 
   def grouped_analyses

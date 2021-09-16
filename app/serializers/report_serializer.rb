@@ -5,7 +5,7 @@ class ReportSerializer < ActiveModel::Serializer
              :si_reaction_settings
 
   def downloadable
-    @downloadable ||= object.file_path.present?
+    @downloadable ||= object.generated_at.present?
   end
 
   def downloaded
@@ -16,5 +16,9 @@ class ReportSerializer < ActiveModel::Serializer
 
   def unread
     downloadable && !downloaded
+  end
+
+  def template
+    object.report_templates_id ||= object.template
   end
 end

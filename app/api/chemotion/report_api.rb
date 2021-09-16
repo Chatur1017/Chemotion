@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Chemotion
   class ReportAPI < Grape::API
     helpers ReportHelpers
@@ -19,12 +21,12 @@ module Chemotion
     end
 
     resource :reports do
-      desc "Build a reaction report using the contents of a JSON file"
+      desc 'Build a reaction report using the contents of a JSON file'
       params do
         requires :id
       end
       get :docx do
-        params[:template] = "single_reaction"
+        params[:template] = 'single_reaction'
         docx, filename = Report.create_reaction_docx(current_user, user_ids, params)
         content_type MIME::Types.type_for(filename)[0].to_s
         env['api.format'] = :binary
@@ -49,17 +51,35 @@ module Chemotion
           force_molfile_selection
         end
         c_id = params[:uiState][:currentCollection]
-        c_id = SyncCollectionsUser.find_by(c_id)&.collection_id if params[:uiState][:isSync]
-
+        c_id = SyncCollectionsUser.find(c_id)&.collection_id if params[:uiState][:isSync]
         %i[sample reaction wellplate].each do |table|
           next unless (p_t = params[:uiState][table])
+
           ids = p_t[:checkedAll] ? p_t[:uncheckedIds] : p_t[:checkedIds]
-          next unless p_t[:checkedAll] || ids
-          column_query = build_column_query(filter_column_selection(table))
-          sql_query = build_sql(table, column_query, c_id, ids, p_t[:checkedAll])
+          next unless p_t[:checkedAll] || ids.present?
+
+          column_query = build_column_query(filter_column_selection(table), current_user.id)
+          sql_query = send("build_sql_#{table}_sample", column_query, c_id, ids, p_t[:checkedAll])
           next unless sql_query
+
           result = db_exec_query(sql_query)
           export.generate_sheet_with_samples(table, result)
+        end
+
+        if params[:exportType] == 1 && params[:columns][:analyses].present?
+          %i[sample].each do |table|
+            next unless (p_t = params[:uiState][table])
+
+            ids = p_t[:checkedAll] ? p_t[:uncheckedIds] : p_t[:checkedIds]
+            next unless p_t[:checkedAll] || ids
+
+            column_query = build_column_query(filter_column_selection("#{table}_analyses".to_sym), current_user.id)
+            sql_query = send("build_sql_#{table}_analyses", column_query, c_id, ids, p_t[:checkedAll])
+            next unless sql_query
+
+            result = db_exec_query(sql_query)
+            export.generate_analyses_sheet_with_samples("#{table}_analyses".to_sym, result, params[:columns][:analyses])
+          end
         end
 
         case export.file_extension
@@ -90,6 +110,7 @@ module Chemotion
           params[:uiState][:currentCollection], params[:uiState][:isSync]
         )
         return unless (p_t = params[:uiState][:reaction])
+
         results = reaction_smiles_hash(
           real_coll_id,
           p_t[:checkedAll] && p_t[:uncheckedIds] || p_t[:checkedIds],
@@ -111,9 +132,10 @@ module Chemotion
           Samples Excel.xlsx")}"
         )
         export = Export::ExportExcel.new
-        column_query = build_column_query(default_columns_wellplate)
-        sql_query = build_sql(:wellplate, column_query, nil, params[:id], false)
+        column_query = build_column_query(default_columns_wellplate, current_user.id)
+        sql_query = build_sql_wellplate_sample(column_query, nil, params[:id], false)
         next unless sql_query
+
         result = db_exec_query(sql_query)
         export.generate_sheet_with_samples(:wellplate, result)
         export.read
@@ -132,9 +154,10 @@ module Chemotion
           Samples Excel.xlsx")}"
         )
         export = Export::ExportExcel.new
-        column_query = build_column_query(default_columns_reaction)
-        sql_query = build_sql(:reaction, column_query, nil, params[:id], false)
+        column_query = build_column_query(default_columns_reaction, current_user.id)
+        sql_query = build_sql_reaction_sample(column_query, nil, params[:id], false)
         next unless sql_query
+
         result = db_exec_query(sql_query)
         export.generate_sheet_with_samples(:reaction, result)
         export.read
@@ -142,6 +165,11 @@ module Chemotion
     end
 
     resource :archives do
+      rescue_from ActiveRecord::RecordNotFound do |_error|
+        message = 'Archive not found'
+        error!(message, 404)
+      end
+
       desc 'return all reports of the user'
       params do
       end
@@ -155,7 +183,7 @@ module Chemotion
       end
       post :downloadable, each_serializer: ReportSerializer do
         return current_user.reports.select do |r|
-          params[:ids].include?(r.id) && r.file_path.present?
+          params[:ids].include?(r.id) && r.generated_at.present?
         end
       end
 
@@ -165,7 +193,10 @@ module Chemotion
       end
       route_param :id do
         delete do
-          current_user.reports.find(params[:id]).destroy!
+          rp = current_user.reports.find(params[:id])
+          att = rp.attachments.first
+          att&.destroy!
+          rp.destroy!
         end
       end
     end
@@ -179,9 +210,9 @@ module Chemotion
       requires :configs, type: Array[Hash], coerce_with: ->(val) { JSON.parse(val) }
       requires :molSerials, type: Array[Hash], coerce_with: ->(val) { JSON.parse(val) }
       requires :prdAtts, type: Array[Hash], coerce_with: ->(val) { JSON.parse(val) }
-      requires :imgFormat, type: String, default: 'png', values: %w(png eps emf)
-      requires :fileName, type: String, default: "ELN_Report_" + Time.now.strftime("%Y-%m-%dT%H-%M-%S")
-      requires :template, type: String, default: "standard"
+      requires :imgFormat, type: String, default: 'png', values: %w[png eps emf]
+      requires :fileName, type: String, default: 'ELN_Report_' + Time.now.strftime('%Y-%m-%dT%H-%M-%S')
+      requires :templateId, type: Integer
       optional :fileDescription
     end
     post :reports, each_serializer: ReportSerializer do
@@ -203,40 +234,41 @@ module Chemotion
         prd_atts: prd_atts,
         objects: params[:objTags],
         img_format: params[:imgFormat],
-        template: params[:template],
+        report_templates_id: params[:templateId],
         author_id: current_user.id
       }
 
       report = Report.create(attributes)
       current_user.reports << report
       report.create_docx
-      return report
+      report
     end
 
     resource :download_report do
-      desc 'return a report in docx format'
+      desc 'return a report in file format'
 
       params do
         requires :id, type: Integer
+        requires :ext, type: String
       end
 
-      get :docx do
+      get :file do
+        ext = params[:ext]
         report = current_user.reports.find(params[:id])
 
         if report
           # set readed
           ru = report.reports_users.find { |r| r.user_id == current_user.id }
           ru.touch :downloaded_at
-          # send docx back
-          full_file_path = Rails.root.join('public', 'docx', report.file_path)
-          file_name_ext = report.file_name + '.docx'
-          content_type MIME::Types.type_for(file_name_ext)[0].to_s
+          # send file
+          att = report.attachments.first
+          content_type att.content_type
           env['api.format'] = :binary
           header(
             'Content-Disposition',
-            "attachment; filename*=UTF-8''#{CGI.escape(file_name_ext)}"
+            "attachment; filename*=UTF-8''#{CGI.escape(att.filename)}"
           )
-          File.read(full_file_path)
+          att.read_file
         end
       end
     end

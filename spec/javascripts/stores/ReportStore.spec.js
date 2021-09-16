@@ -2,9 +2,9 @@ import React from 'react'
 import expect from 'expect'
 import sinon from 'sinon'
 import {originalState} from '../fixture/report'
-import alt from '../../../app/assets/javascripts/components/alt'
-import ReportActions from '../../../app/assets/javascripts/components/actions/ReportActions'
-import ReportStore from '../../../app/assets/javascripts/components/stores/ReportStore'
+import alt from '../../../app/packs/src/components/alt'
+import ReportActions from '../../../app/packs/src/components/actions/ReportActions'
+import ReportStore from '../../../app/packs/src/components/stores/ReportStore'
 
 describe('ReportStore', () => {
   beforeEach(() => {
@@ -56,6 +56,7 @@ describe('ReportStore', () => {
                       {text: "material", checked: false},
                       {text: "description", checked: false},
                       {text: "purification", checked: false},
+                      {text: "dangerous products", checked: false},
                       {text: "tlc", checked: false},
                       {text: "observation", checked: false},
                       {text: "analysis", checked: false},

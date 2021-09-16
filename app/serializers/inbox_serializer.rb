@@ -1,5 +1,5 @@
 class InboxSerializer < ActiveModel::Serializer
-  attributes :id, :name, :container_type, :children, :unlinked_attachments
+  attributes :id, :name, :container_type, :children, :unlinked_attachments, :inbox_count
   #has_many :attachments, :serializer => AttachmentSerializer
 
   def children
@@ -7,7 +7,7 @@ class InboxSerializer < ActiveModel::Serializer
     root = all_containers.keys[0]
     arr = Array.new
     get_attchement_ids(arr, all_containers[root])
-    attachments = Attachment.where(container_id: arr)
+    attachments = Attachment.where_container(arr)
 
     json_tree(attachments, all_containers[root])
   end
@@ -21,16 +21,35 @@ class InboxSerializer < ActiveModel::Serializer
 
   def json_tree(attachments, containers)
       containers.map do |container, subcontainers|
-        current_attachments = attachments.select{|attach| attach.container_id == container.id}
+        current_attachments = attachments.select { |att|
+          att.for_container? && att.attachable_id == container.id
+        }
+
           {:id => container.id,
             :name => container.name,
             :container_type => container.container_type,
             :attachments => current_attachments,
+            :created_at => container.created_at,
             :children => json_tree(attachments, subcontainers).compact}
       end
   end
 
   def unlinked_attachments
-    Attachment.where(:container_id => nil, :created_for => object.containable.id)
+    Attachment.where(
+      attachable_type: 'Container',
+      attachable_id: nil,
+      created_for: object.containable.id
+    )
+  end
+
+  def inbox_count
+    all_containers = object.hash_tree
+    root = all_containers.keys[0]
+    arr = []
+    get_attchement_ids(arr, all_containers[root])
+
+    cnt = Attachment.where_container(arr).length
+    cnt += unlinked_attachments.length
+    cnt
   end
 end

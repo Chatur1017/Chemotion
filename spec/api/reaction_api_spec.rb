@@ -14,9 +14,9 @@ describe Chemotion::ReactionAPI do
     end
 
     describe 'GET /api/v1/reactions' do
-      let!(:c1) {
+      let!(:c1) do
         create(:collection, label: 'C1', user: user, is_shared: false)
-      }
+      end
       let!(:r1) { create(:reaction, name: 'r1', collections: [c1]) }
       let!(:r2) { create(:reaction, name: 'r2', collections: [c1]) }
 
@@ -28,16 +28,14 @@ describe Chemotion::ReactionAPI do
           [[r1.id, r1.name], [r2.id, r2.name]]
         )
         expect(reactions.first).to include(
-          'id' => r2.id, 'name' => r2.name, 'type'=> 'reaction',
+          'id' => r2.id, 'name' => r2.name, 'type' => 'reaction',
           'tag' => include(
             'taggable_id' => r2.id, 'taggable_type' => 'Reaction',
             'taggable_data' => include(
               'collection_labels' => include(
-                {
-                  'name' => 'C1', 'is_shared' => false, 'id' => c1.id,
-                  'user_id' => user.id, 'shared_by_id' => c1.shared_by_id,
-                  'is_synchronized' => c1.is_synchronized
-                }
+                'name' => 'C1', 'is_shared' => false, 'id' => c1.id,
+                'user_id' => user.id, 'shared_by_id' => c1.shared_by_id,
+                'is_synchronized' => c1.is_synchronized
               )
             )
           )
@@ -47,9 +45,9 @@ describe Chemotion::ReactionAPI do
 
     describe 'GET /api/v1/reactions/:id' do
       context 'with appropriate permissions' do
-        let(:c1) {
+        let(:c1) do
           create(:collection, user: user, is_shared: true, permission_level: 0)
-        }
+        end
         let(:c2) { create(:collection, user: user) }
         let(:r1) { create(:reaction) }
         let(:r2) { create(:reaction) }
@@ -77,12 +75,12 @@ describe Chemotion::ReactionAPI do
       end
 
       context 'with inappropriate permissions' do
-        let(:c1) {
+        let(:c1) do
           create(
             :collection,
             user_id: user.id + 1, is_shared: true, permission_level: 0
           )
-        }
+        end
         let(:r1) { create(:reaction) }
 
         before do
@@ -104,16 +102,18 @@ describe Chemotion::ReactionAPI do
         let(:c1) { create(:collection, user_id: user.id) }
         let(:r1) { create(:reaction, name: 'test', created_by: user.id) }
         let(:params) { { id: r1.id, collection_id: c1.id } }
+
         before do
           CollectionsReaction.create(reaction_id: r1.id, collection_id: c1.id)
-          delete "/api/v1/reactions/#{r1.id}", params
+          delete "/api/v1/reactions/#{r1.id}", params: params
         end
-        it 'should be able to delete a reaction' do
+
+        it 'is able to delete a reaction' do
           reaction_id = r1.id
           r = Reaction.find_by(name: 'test')
           expect(r).to be_nil
-          a = Literature.where(reaction_id: reaction_id)
-          expect(a).to match_array([])
+          # a = Literature.where(reaction_id: reaction_id)
+          # expect(a).to match_array([])
           a = CollectionsReaction.where(reaction_id: reaction_id)
           expect(a).to match_array([])
           a = ReactionsProductSample.where(reaction_id: reaction_id)
@@ -124,56 +124,19 @@ describe Chemotion::ReactionAPI do
           expect(a).to match_array([])
         end
       end
-
-      context 'with UIState' do
-        let!(:c1) { create(:collection, user: user) }
-        let!(:r1) { create(:reaction, name: 'test_1', collections: [c1]) }
-        let!(:r2) { create(:reaction, name: 'test_2', collections: [c1]) }
-        let!(:r3) { create(:reaction, name: 'test_3', collections: [c1]) }
-
-        let!(:params_all_false) {
-          {
-            all: false,
-            collection_id: c1.id,
-            included_ids: [r1.id, r2.id],
-            excluded_ids: [],
-          }
-        }
-
-        let!(:params_all_true) {
-          {
-            all: true,
-            collection_id: c1.id,
-            included_ids: [],
-            excluded_ids: [r3.id],
-          }
-        }
-
-        it 'should be able to delete reaction when "all" is false' do
-          delete '/api/v1/reactions/ui_state/', { ui_state: params_all_false, options: {} }.to_json, 'CONTENT_TYPE' => 'application/json'
-          expect(c1.reactions).to match_array([r3])
-          expect(Reaction.only_deleted.where(id: [r1.id, r2.id, r3.id])).to match_array([r1, r2])
-        end
-
-        it 'should be able to delete reactions when "all" is true' do
-          delete '/api/v1/reactions/ui_state/', { ui_state: params_all_true, options: {} }.to_json, 'CONTENT_TYPE' => 'application/json'
-          expect(Reaction.only_deleted.where(id: [r1.id, r2.id, r3.id])).to match_array([r1, r2])
-          expect(c1.reactions.where(id: [r1.id, r2.id, r3.id])).to match_array([r3])
-        end
-      end
     end
 
     describe 'PUT /api/v1/reactions', focus: true do
-      let(:collection_1) {
+      let(:collection_1) do
         Collection.create!(label: 'Collection #1', user: user)
-      }
+      end
       let(:sample_1) { create(:sample, name: 'Sample 1') }
       let(:sample_2) { create(:sample, name: 'Sample 2') }
       let(:sample_3) { create(:sample, name: 'Sample 3') }
       let(:sample_4) { create(:sample, name: 'Sample 4') }
 
       let(:reaction_1) { create(:reaction, name: 'r1') }
-      let(:reaction_container) {
+      let(:reaction_container) do
         {
           'name' => 'new',
           'attachments' => [],
@@ -186,7 +149,7 @@ describe Chemotion::ReactionAPI do
           'extended_metadata' => {},
           'children' => []
         }
-      }
+      end
 
       before do
         CollectionsReaction.create(
@@ -207,7 +170,7 @@ describe Chemotion::ReactionAPI do
       end
 
       context 'updating and reassigning existing materials' do
-        let(:params) {
+        let(:params) do
           {
             'id' => reaction_1.id,
             'name' => 'new name',
@@ -243,19 +206,19 @@ describe Chemotion::ReactionAPI do
               ]
             }
           }
-        }
+        end
 
         before do
-          put "/api/v1/reactions/#{reaction_1.id}", params
+          put "/api/v1/reactions/#{reaction_1.id}", params: params, as: :json
         end
 
         let(:r) { Reaction.find(reaction_1.id) }
 
-        it 'should update the reaction attributes' do
+        it 'updates the reaction attributes' do
           expect(r.name).to eq('new name')
         end
 
-        it 'should update the sample attributes' do
+        it 'updates the sample attributes' do
           s1 = r.starting_materials.find(sample_1.id)
           s2 = r.starting_materials.find(sample_2.id)
           expect(s1.attributes).to include(
@@ -266,21 +229,21 @@ describe Chemotion::ReactionAPI do
           )
         end
 
-        it 'should material associations and reassign to a new group' do
+        it 'materials associations and reassign to a new group' do
           sa1 = r.reactions_starting_material_samples
                  .find_by(sample_id: sample_1.id)
           sa2 = r.reactions_starting_material_samples
                  .find_by(sample_id: sample_2.id)
+          sa2_eq = (sa2.sample.amount_mmol / sa1.sample.amount_mmol).round(14)
           expect(sa1.attributes).to include(
             'reference' => true, 'equivalent' => 1.0
           )
-          expect(sa2.attributes).to include(
-            'reference' => false, 'equivalent' => 5.5
-          )
+          expect(sa2.attributes).to include('reference' => false)
+          expect(sa2.equivalent.round(14)).to eq(sa2_eq)
           expect(r.reactions_reactant_samples).to be_empty
         end
 
-        it 'should delete only not included samples' do
+        it 'deletes only not included samples' do
           expect(
             r.reactions_product_samples.find_by(sample_id: sample_3.id)
           ).to be_present
@@ -291,7 +254,7 @@ describe Chemotion::ReactionAPI do
       end
 
       context 'creating new materials' do
-        let(:params) {
+        let(:params) do
           {
             'id' => reaction_1.id,
             'name' => 'new name',
@@ -330,18 +293,18 @@ describe Chemotion::ReactionAPI do
               ]
             }
           }
-        }
+        end
 
         before do
-          put(
-            "/api/v1/reactions/#{reaction_1.id}.json", params.to_json,
-            'CONTENT_TYPE' => 'application/json'
+          put("/api/v1/reactions/#{reaction_1.id}.json",
+            params: params.to_json,
+            headers: { 'CONTENT_TYPE' => 'application/json' }
           )
         end
 
         let(:r) { Reaction.find(reaction_1.id) }
 
-        it 'should create subsamples' do
+        it 'creates subsamples' do
           subsample = r.products.last
           expect(subsample.parent).to eq(sample_1)
           expect(subsample.attributes).to include(
@@ -358,18 +321,18 @@ describe Chemotion::ReactionAPI do
     end
 
     describe 'POST /api/v1/reactions', focus: true do
-      let(:collection_1) {
+      let(:collection_1) do
         Collection.create!(label: 'Collection #1', user: user)
-      }
-      let(:sample_1) {
+      end
+      let(:sample_1) do
         create(
-          :sample, name: 'Sample 1', container: FactoryGirl.create(:container)
+          :sample, name: 'Sample 1', container: FactoryBot.create(:container)
         )
-      }
+      end
       let(:molfile_1) { sample_1.molecule.molfile }
 
       context 'creating new materials' do
-        let(:params) {
+        let(:params) do
           {
             'name' => 'r001',
             'collection_id' => collection_1.id,
@@ -391,7 +354,7 @@ describe Chemotion::ReactionAPI do
               'reactants' => [
                 'id' => 'd4ca4ec0-6d8e-11e5-b2f1-c9913eb3e336',
                 'name' => 'Copied Sample',
-                'solvent' => 'solvent1',
+                'solvent' => [{:label=>'Acetone', :smiles=>'CC(C)=O', :ratio=>'100'}],
                 'target_amount_unit' => 'mg',
                 'target_amount_value' => 86.09596,
                 'parent_id' => sample_1.id,
@@ -405,18 +368,18 @@ describe Chemotion::ReactionAPI do
               ]
             }
           }
-        }
+        end
 
         before do
-          post(
-            '/api/v1/reactions.json', params.to_json,
-            'CONTENT_TYPE' => 'application/json'
+          post('/api/v1/reactions.json',
+            params: params.to_json,
+            headers: { 'CONTENT_TYPE' => 'application/json' }
           )
         end
 
         let(:r) { Reaction.find_by(name: 'r001') }
 
-        it 'should create subsamples' do
+        it 'creates subsamples' do
           subsample = r.products.last
 
           expect(subsample.parent).to eq(sample_1)
@@ -433,13 +396,13 @@ describe Chemotion::ReactionAPI do
           )
         end
 
-        it 'should created a copied sample' do
+        it 'creates a copied sample' do
           reactant = r.reactants.last
           expect(reactant.attributes).to include(
             'name' => 'Copied Sample',
             'target_amount_value' => 86.09596,
             'target_amount_unit' => 'mg',
-            'solvent' => 'solvent1'
+            'solvent' => [{ 'label' => 'Acetone', 'smiles' => 'CC(C)=O', 'ratio' => '100' }]
           )
           reactant_association = r.reactions_reactant_samples
                                   .find_by(sample_id: reactant.id)
@@ -450,7 +413,7 @@ describe Chemotion::ReactionAPI do
       end
 
       context 'creating a copied reaction' do
-        let!(:new_container) {
+        let!(:new_container) do
           {
             'name' => 'new',
             'attachments' => [],
@@ -463,9 +426,9 @@ describe Chemotion::ReactionAPI do
             'extended_metadata' => {},
             'children' => []
           }
-        }
+        end
 
-        let(:params) {
+        let(:params) do
           {
             'name' => ' Copy',
             'collection_id' => collection_1.id,
@@ -486,10 +449,10 @@ describe Chemotion::ReactionAPI do
               ]
             }
           }
-        }
+        end
 
         before do
-          post '/api/v1/reactions', params
+          post '/api/v1/reactions', params: params, as: :json
         end
 
         let(:r) { Reaction.last }

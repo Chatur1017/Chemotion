@@ -1,4 +1,21 @@
-class ElementalComposition < ActiveRecord::Base
+# == Schema Information
+#
+# Table name: elemental_compositions
+#
+#  id               :integer          not null, primary key
+#  sample_id        :integer          not null
+#  composition_type :string           not null
+#  data             :hstore           not null
+#  loading          :float
+#  created_at       :datetime
+#  updated_at       :datetime
+#
+# Indexes
+#
+#  index_elemental_compositions_on_sample_id  (sample_id)
+#
+
+class ElementalComposition < ApplicationRecord
   belongs_to :sample
 
   TYPES = {
@@ -40,7 +57,7 @@ class ElementalComposition < ActiveRecord::Base
       end
       self.loading = new_amount / amount * 1000.0
     else
-      return unless mf = sample.molecule.sum_formular
+      return unless mf = sample.molecule_sum_formular
       return unless pf = residue.custom_info['formula']
 
       self.loading = Chemotion::Calculations.get_loading mf, pf, self.data

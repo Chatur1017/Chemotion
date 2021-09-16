@@ -1,5 +1,5 @@
 class Storage
-  attr_reader :attachment, :primary_store, :secundary_store
+  attr_reader :attachment, :primary_store, :secondary_store
   class << self
     def new_store(attach)
       storage_klass(attach).new(attach)
@@ -48,10 +48,16 @@ class Storage
 
   def regenerate_thumbnail
     return if (fn = attachment.filename).blank? || (fe = File.extname(fn)&.downcase).blank?
+    # wa for issue with 'jpeg' extension
+    fe = '.jpg' if fe == '.jpeg'
     tmp = Tempfile.new([fn, fe], encoding: 'ascii-8bit')
     tmp.write attachment.read_file
     tmp.rewind
-    attachment.thumb_path = Thumbnailer.create(tmp.path)
+    attachment.thumb_path = begin
+                              Thumbnailer.create(tmp.path)
+                            rescue
+                              nil
+                            end
     if attachment.thumb_path && File.exist?(attachment.thumb_path)
       attachment.thumb = true
       store_thumb
